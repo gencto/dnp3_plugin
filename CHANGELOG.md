@@ -1,5 +1,19 @@
 # Changelog
 
+All notable changes to this package are documented here. Versions follow
+[semantic versioning](https://semver.org/); while the version is `0.x`, a minor version may
+contain breaking changes, which are marked **Breaking**. New entries go under
+`## Unreleased` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Unreleased
+
+* Docs: README restructured for pub.dev (installation from pub.dev, platform support matrix,
+  examples table); the detailed guides moved to `doc/master.md`, `doc/outstation.md`,
+  `doc/architecture.md` and `doc/benchmarks.md`.
+* New `example/example.dart`: a self-contained outstation + master demo.
+* Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and pull
+  request templates.
+
 ## 0.3.0
 
 * `MasterServer` releases the channel of an accepted connection when its session ends and
@@ -17,7 +31,7 @@
 * `Dnp3.closeIsolate` / `Dnp3.shutdown` close the event streams of the isolate's objects;
   later calls fail with `ShutdownException`.
 * `MeasurementWorker` acknowledges a fragment even if the handler throws.
-* Internal helpers (`decodeResults`, `decodeAssociationMessage`, `decodeAttribute`,
+* **Breaking:** internal helpers (`decodeResults`, `decodeAssociationMessage`, `decodeAttribute`,
   `encodeAttribute`, the `ClientEvents` dispatch methods) are no longer part of the
   public API.
 * A Dart restart callback that throws is answered as "not supported" (it was reported to
@@ -53,7 +67,7 @@
 * Measurement back-pressure: `maxInFlightFragments`, `Association.acknowledge`, automatic
   acknowledgement in `MeasurementWorker`.
 * `Association.readFile(onOpened:)` decides whether to continue once the size is known.
-* `Dnp3Exception.detail` with the structured library error. `TimeSyncException.detail`
+* `Dnp3Exception.detail` with the structured library error. **Breaking:** `TimeSyncException.detail`
   (int) was renamed to `value`.
 * ABI version 2.
 

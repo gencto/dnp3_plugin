@@ -1,0 +1,64 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Security problems must not be reported here: see SECURITY.md.
+        If the problem is in the DNP3 protocol behavior of the Rust stack itself, please also
+        check https://github.com/stepfunc/dnp3.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        A small program that shows the problem, ideally an outstation and a master in one
+        file like example/example.dart.
+      render: dart
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and errors
+      description: |
+        Exceptions with their `detail`, and native logs if relevant
+        (`Dnp3.enableLogging(level: Dnp3LogLevel.debug)` and a `DecodeLevel` on the channel).
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options: [Android, iOS, macOS, Linux, Windows]
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `dart --version` or `flutter --version`, Rust version (`rustc -V`), device / OS version, peer DNP3 device if any.
+      render: text
+  - type: dropdown
+    id: native
+    attributes:
+      label: How is the native library obtained?
+      options:
+        - Built by the build hook (Rust toolchain)
+        - Prebuilt libraries (DNP3_PREBUILT_DIR / prebuilt_dir)
+        - Not sure

@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement or a missing part of the DNP3 API
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The use case, e.g. the device or system you are integrating with.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+      description: How you would like to use it. A Dart snippet helps.
+      render: dart
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to implement this (see CONTRIBUTING.md)
