@@ -13,8 +13,13 @@ L = [
     '',
     '/// A DNP3 object group / variation pair.',
     'final class Variation {',
+    '  /// Object group number',
     '  final int group;',
+    '',
+    '  /// Variation number within the group (0 = any variation)',
     '  final int variation;',
+    '',
+    '  /// Description from IEEE 1815 (as named by the dnp3 crate)',
     '  final String description;',
     '',
     '  const Variation._(this.group, this.variation, this.description);',
@@ -32,8 +37,9 @@ L = [
 for n, g, v, desc in fx:
     name = n[0].lower() + n[1:]
     desc = desc.replace("'", "\\'")
+    L.append(f"  /// g{g}v{v}: {desc.replace(chr(92), '')}")
     L.append(f"  static const {name} = Variation._({g}, {v}, '{desc}');")
-L += ['', '  static const List<Variation> values = [']
+L += ['', '  /// Every fixed group / variation known to the dnp3 crate', '  static const List<Variation> values = [']
 for n, g, v, desc in fx:
     L.append(f"    {n[0].lower() + n[1:]},")
 L += ['  ];', '',

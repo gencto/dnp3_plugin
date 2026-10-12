@@ -1,3 +1,6 @@
+// Internal to the package (not exported): documentation of every member is not required.
+// ignore_for_file: public_member_api_docs
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';

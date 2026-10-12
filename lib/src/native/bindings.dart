@@ -1,3 +1,6 @@
+// Internal to the package (not exported): documentation of every member is not required.
+// ignore_for_file: public_member_api_docs
+
 // Raw bindings to the native library built from `native/` (see hook/build.dart).
 //
 // Functions that never block and never call back into Dart are declared as leaf calls;
