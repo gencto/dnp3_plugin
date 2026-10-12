@@ -56,6 +56,7 @@ final class ConnectTo extends ConnectDecision {
 
   /// outstation clients: master address used for this connection
   final int? masterAddress;
+
   /// See [ConnectDecision.connect]
   const ConnectTo(this.endpoint, {this.timeout, this.localEndpoint, this.masterAddress});
 }

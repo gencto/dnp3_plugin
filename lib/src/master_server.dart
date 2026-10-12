@@ -95,7 +95,8 @@ final class MasterServer {
 
   /// Listen on `address` (`ip:port`); [handler] decides for every incoming connection.
   ///
-  /// [callbackTimeout] bounds each [handler] callback; on expiry the connection is rejected.
+  /// [callbackTimeout] bounds each [handler] callback: an unanswered `accept` / `acceptLinkId`
+  /// rejects the connection, an unfinished `start` is no longer waited for.
   static Future<MasterServer> bind(
     String address,
     MasterServerHandler handler, {

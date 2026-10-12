@@ -17,6 +17,7 @@ import 'variation.dart';
 final class ReadHeader {
   /// 0 all objects, 1 one-byte range, 2 two-byte range, 3 one-byte count, 4 two-byte count
   final int _kind;
+
   /// Object group and variation requested
   final Variation variation;
   final int _a;
@@ -156,17 +157,22 @@ final class _Headers extends ReadRequest {
 final class Crob {
   /// Control code: operation type, trip/close code, queue and clear bits
   final ControlCode code;
+
   /// Number of times to execute the operation (0..255)
   final int count;
+
   /// Duration of the on (active) part of a pulse, in milliseconds
   final int onTimeMs;
+
   /// Duration of the off (inactive) part of a pulse, in milliseconds
   final int offTimeMs;
+
   /// CROB executing [code] [count] times with the given pulse timings
   const Crob(this.code, {this.count = 1, this.onTimeMs = 0, this.offTimeMs = 0});
 
   /// LATCH_ON executed once
   const Crob.latchOn() : this(const ControlCode.latchOn());
+
   /// LATCH_OFF executed once
   const Crob.latchOff() : this(const ControlCode.latchOff());
 
@@ -178,17 +184,22 @@ final class Crob {
 sealed class AnalogOutput {
   /// Base constructor of the g41 variations
   const AnalogOutput();
+
   /// g41v1: 32-bit signed integer
   const factory AnalogOutput.int32(int value) = AnalogOutputInt32;
+
   /// g41v2: 16-bit signed integer
   const factory AnalogOutput.int16(int value) = AnalogOutputInt16;
+
   /// g41v3: single-precision float
   const factory AnalogOutput.float32(double value) = AnalogOutputFloat32;
+
   /// g41v4: double-precision float
   const factory AnalogOutput.double64(double value) = AnalogOutputDouble64;
 
   int get _type;
   void _encode(ByteWriter w);
+
   /// Requested output value
   num get value;
 }
@@ -197,6 +208,7 @@ sealed class AnalogOutput {
 final class AnalogOutputInt32 extends AnalogOutput {
   @override
   final int value;
+
   /// Command with [value] (-2^31..2^31-1, checked when encoded)
   const AnalogOutputInt32(this.value);
   @override
@@ -211,6 +223,7 @@ final class AnalogOutputInt32 extends AnalogOutput {
 final class AnalogOutputInt16 extends AnalogOutput {
   @override
   final int value;
+
   /// Command with [value] (-32768..32767, checked when encoded)
   const AnalogOutputInt16(this.value);
   @override
@@ -223,6 +236,7 @@ final class AnalogOutputInt16 extends AnalogOutput {
 final class AnalogOutputFloat32 extends AnalogOutput {
   @override
   final double value;
+
   /// Command with [value], sent as a single-precision float
   const AnalogOutputFloat32(this.value);
   @override
@@ -237,6 +251,7 @@ final class AnalogOutputFloat32 extends AnalogOutput {
 final class AnalogOutputDouble64 extends AnalogOutput {
   @override
   final double value;
+
   /// Command with [value]
   const AnalogOutputDouble64(this.value);
   @override
@@ -248,7 +263,13 @@ final class AnalogOutputDouble64 extends AnalogOutput {
 }
 
 /// How a [CommandSet] is sent
-enum CommandMode { directOperate, selectBeforeOperate }
+enum CommandMode {
+  /// DIRECT_OPERATE (function code 0x05): executed in a single request
+  directOperate,
+
+  /// SELECT (0x03) followed by OPERATE (0x04)
+  selectBeforeOperate,
+}
 
 /// Collection of commands sent in one SELECT/OPERATE or DIRECT_OPERATE request.
 ///
@@ -338,12 +359,16 @@ final class RequestHeaders {
 
   /// Adds an all-objects header (qualifier 0x06)
   RequestHeaders allObjects(Variation v) => _read(ReadHeader.allObjects(v));
+
   /// Adds a one-byte start/stop range header (qualifier 0x00)
   RequestHeaders range8(Variation v, int start, int stop) => _read(ReadHeader.range8(v, start, stop));
+
   /// Adds a two-byte start/stop range header (qualifier 0x01)
   RequestHeaders range16(Variation v, int start, int stop) => _read(ReadHeader.range16(v, start, stop));
+
   /// Adds a one-byte limited count header (qualifier 0x07)
   RequestHeaders limitedCount8(Variation v, int count) => _read(ReadHeader.limitedCount8(v, count));
+
   /// Adds a two-byte limited count header (qualifier 0x08)
   RequestHeaders limitedCount16(Variation v, int count) => _read(ReadHeader.limitedCount16(v, count));
 
@@ -408,8 +433,10 @@ void encodeAttribute(ByteWriter w, DeviceAttribute a) {
 /// One header of analog input dead bands (group 34)
 final class DeadBandHeader {
   final int _type;
+
   /// Use 1-byte index prefixes (qualifier 0x17) instead of 2-byte (0x28)
   final bool oneByteIndex;
+
   /// Dead band per analog input index
   final Map<int, num> values;
 
