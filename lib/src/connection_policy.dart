@@ -18,6 +18,7 @@ final class ConnectContext {
   /// configured endpoints
   final List<String> endpoints;
 
+  /// Creates a context (normally done by the library)
   const ConnectContext(this.failures, this.nextIndex, this.endpoints);
 
   @override
@@ -26,6 +27,7 @@ final class ConnectContext {
 
 /// Decision of a [ConnectionPolicy]
 sealed class ConnectDecision {
+  /// Base constructor for subclasses
   const ConnectDecision();
 
   /// Connect to `endpoint` (`host:port` or `ip:port`). Unset options fall back to the
@@ -41,18 +43,30 @@ sealed class ConnectDecision {
   const factory ConnectDecision.wait(Duration delay) = WaitBeforeConnect;
 }
 
+/// Decision to connect to [endpoint] now
 final class ConnectTo extends ConnectDecision {
+  /// `host:port` or `ip:port` to connect to
   final String endpoint;
+
+  /// TCP connect timeout of this attempt; `null` uses the configured connect timeout
   final Duration? timeout;
+
+  /// Local address to bind before connecting; `null` uses the configured one
   final String? localEndpoint;
 
   /// outstation clients: master address used for this connection
   final int? masterAddress;
+
+  /// See [ConnectDecision.connect]
   const ConnectTo(this.endpoint, {this.timeout, this.localEndpoint, this.masterAddress});
 }
 
+/// Decision to wait [delay] before [ConnectionPolicy.next] is called again
 final class WaitBeforeConnect extends ConnectDecision {
+  /// Time to wait before the next decision is requested
   final Duration delay;
+
+  /// See [ConnectDecision.wait]
   const WaitBeforeConnect(this.delay);
 }
 
@@ -62,6 +76,7 @@ final class WaitBeforeConnect extends ConnectDecision {
 /// `callbackTimeout` (or a method returns null) the native round-robin / exponential
 /// back-off policy decides instead, so a slow or busy isolate never stalls the channel.
 abstract class ConnectionPolicy {
+  /// Const constructor for subclasses
   const ConnectionPolicy();
 
   /// Called whenever the client needs a new connection

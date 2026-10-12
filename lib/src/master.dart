@@ -60,6 +60,7 @@ mixin ClientEvents {
   ConnectionPolicy? _connectionPolicy;
   List<String> _endpoints = const [];
 
+  /// Installs the policy that answers native connection requests for `endpoints` (internal).
   @internal
   void setConnectionPolicy(ConnectionPolicy? policy, List<String> endpoints) {
     _connectionPolicy = policy;
@@ -102,6 +103,7 @@ mixin ClientEvents {
     return false;
   }
 
+  /// Closes the client-state, port-state and connection-event streams (internal).
   @internal
   void closeClientEvents() {
     _clientStates.close();
@@ -233,22 +235,30 @@ final class MasterChannel with ClientEvents {
     if (_destroyed) throw StateError('MasterChannel has been destroyed');
   }
 
+  /// Starts the channel: it connects / opens the port and begins running association tasks.
+  ///
+  /// Throws [StateError] if the channel was destroyed.
   Future<void> enable() {
     _checkAlive();
     return _rt.call((p, r) => dnp3_master_enable(handle, 1, p, r));
   }
 
+  /// Stops the channel and closes its connection; associations and polls are kept.
+  ///
+  /// Throws [StateError] if the channel was destroyed.
   Future<void> disable() {
     _checkAlive();
     return _rt.call((p, r) => dnp3_master_enable(handle, 0, p, r));
   }
 
+  /// Changes how much protocol traffic the channel logs.
   Future<void> setDecodeLevel(DecodeLevel level) {
     _checkAlive();
     final json = utf8Bytes(toJson(level.toJson()));
     return _rt.call((p, r) => dnp3_master_set_decode_level(handle, json.address, json.length, p, r));
   }
 
+  /// Returns the channel's current protocol decode (logging) level.
   Future<DecodeLevel> getDecodeLevel() async {
     _checkAlive();
     final s = await _rt.call((p, r) => dnp3_master_get_decode_level(handle, p, r)) as String;
@@ -325,46 +335,111 @@ final class MasterChannel with ClientEvents {
 
 /// Type of a master task (see `AssociationEvent`)
 enum TaskType {
+  /// A user READ ([Association.read] / [Association.readWithHandler])
   userRead,
+
+  /// A periodic [Poll] added with [Association.addPoll]
   periodicPoll,
+
+  /// Integrity poll run at startup / after the outstation restarted or overflowed
   startupIntegrity,
+
+  /// Event scan triggered automatically by the outstation's class IIN bits
   autoEventScan,
+
+  /// SELECT/OPERATE or DIRECT_OPERATE ([Association.operate])
   command,
+
+  /// WRITE clearing the outstation's DEVICE_RESTART IIN bit
   clearRestartBit,
+
+  /// Automatic ENABLE_UNSOLICITED sent during startup
   enableUnsolicited,
+
+  /// Automatic DISABLE_UNSOLICITED sent during startup
   disableUnsolicited,
+
+  /// Time synchronization (automatic or [Association.synchronizeTime])
   timeSync,
+
+  /// COLD_RESTART or WARM_RESTART
   restart,
+
+  /// WRITE of analog dead bands ([Association.writeDeadBands])
   writeDeadBands,
+
+  /// Request expecting an empty response ([Association.sendAndExpectEmptyResponse] and helpers)
   genericEmptyResponse,
+
+  /// File or directory read
   fileRead,
+
+  /// AUTHENTICATE_FILE ([Association.getFileAuthKey])
   fileAuth,
+
+  /// OPEN_FILE ([Association.openFile])
   fileOpen,
+
+  /// WRITE of a file data block ([Association.writeFileBlock])
   fileWriteBlock,
+
+  /// CLOSE_FILE ([Association.closeFile])
   fileClose,
+
+  /// GET_FILE_INFO ([Association.getFileInfo])
   getFileInfo,
 }
 
-enum AssociationEventType { taskStart, taskSuccess, taskFail, unsolicitedResponse }
+/// Kind of an [AssociationEvent]
+enum AssociationEventType {
+  /// A task sent its request
+  taskStart,
+
+  /// A task completed successfully
+  taskSuccess,
+
+  /// A task failed; see [AssociationEvent.error]
+  taskFail,
+
+  /// An unsolicited response was received
+  unsolicitedResponse,
+}
 
 /// Informational events of an association (enable with `information: true`)
 final class AssociationEvent {
+  /// What happened
   final AssociationEventType type;
+
+  /// Task concerned; null for unsolicited responses
   final TaskType? taskType;
+
+  /// Request function code (task start / success, and failures of [TaskType.genericEmptyResponse])
   final FunctionCode? functionCode;
+
+  /// Application-layer sequence number of the request or unsolicited response
   final int sequence;
+
+  /// Reason of a [AssociationEventType.taskFail]
   final TaskError? error;
+
+  /// IIN2 byte returned by the outstation when [error] is [TaskError.rejectedByIin2]
+  final int iin2;
+
+  /// Unsolicited response repeated the previous one's sequence number
   final bool isDuplicate;
 
+  /// Creates an event; instances normally come from [Association.information].
   const AssociationEvent(
     this.type, {
     this.taskType,
     this.functionCode,
     this.sequence = 0,
     this.error,
+    this.iin2 = 0,
     this.isDuplicate = false,
   });
 
+  /// Decodes a native association-info message of native `type` with packed value `v` (internal).
   static AssociationEvent decode(int type, int v) {
     final t = AssociationEventType.values[type.clamp(0, 3)];
     final task = v & 0xFF;
@@ -385,6 +460,8 @@ final class AssociationEvent {
               ? FunctionCode.fromCode((v >> 8) & 0xFF)
               : null,
           error: TaskError.fromCode((v >> 24) & 0xFF),
+          // the task error sub-code carries the IIN2 byte in its bits 8..15
+          iin2: (v >> 32) & 0xFF,
         );
       case AssociationEventType.unsolicitedResponse:
         return AssociationEvent(t, isDuplicate: v & 1 != 0, sequence: (v >> 16) & 0xFF);
@@ -399,35 +476,97 @@ final class AssociationEvent {
 
 /// Permissions of a DNP3 file (owner / group / world × read / write / execute)
 extension type const FilePermissions(int bits) {
+  /// No permission
   static const FilePermissions none = FilePermissions(0);
+
+  /// Every permission (0o777)
   static const FilePermissions all = FilePermissions(0x1FF);
+
+  /// Execute permission for everyone else
   static const FilePermissions worldExecute = FilePermissions(0x001);
+
+  /// Write permission for everyone else
   static const FilePermissions worldWrite = FilePermissions(0x002);
+
+  /// Read permission for everyone else
   static const FilePermissions worldRead = FilePermissions(0x004);
+
+  /// Execute permission for the group
   static const FilePermissions groupExecute = FilePermissions(0x008);
+
+  /// Write permission for the group
   static const FilePermissions groupWrite = FilePermissions(0x010);
+
+  /// Read permission for the group
   static const FilePermissions groupRead = FilePermissions(0x020);
+
+  /// Execute permission for the owner
   static const FilePermissions ownerExecute = FilePermissions(0x040);
+
+  /// Write permission for the owner
   static const FilePermissions ownerWrite = FilePermissions(0x080);
+
+  /// Read permission for the owner
   static const FilePermissions ownerRead = FilePermissions(0x100);
 
+  /// Union of both permission sets
   FilePermissions operator |(FilePermissions o) => FilePermissions(bits | o.bits);
+
+  /// Whether every permission in `o` is granted
   bool has(FilePermissions o) => bits & o.bits == o.bits;
 }
 
-enum FileType { directory, file, other }
+/// Type of an entry reported by the outstation (group 70 variation 7)
+enum FileType {
+  /// A directory
+  directory,
 
-enum FileMode { none, read, write, append }
+  /// A simple file
+  file,
 
+  /// Any other type; the raw code is in [FileInfo.rawType]
+  other,
+}
+
+/// Mode in which [Association.openFile] opens a file
+enum FileMode {
+  /// No mode (null mode code 0)
+  none,
+
+  /// Open for reading
+  read,
+
+  /// Create or truncate for writing
+  write,
+
+  /// Open for appending
+  append,
+}
+
+/// Directory entry / file description returned by the outstation (group 70 variation 7)
 final class FileInfo {
+  /// File or directory name
   final String name;
+
+  /// Kind of entry
   final FileType type;
+
+  /// Raw DNP3 file type code (0 directory, 1 simple file)
   final int rawType;
+
+  /// Size in bytes (for a directory: number of entries)
   final int size;
+
+  /// Creation time
   final Dnp3Time created;
+
+  /// Owner / group / world permissions
   final FilePermissions permissions;
+
+  /// Creates a file description.
   const FileInfo(this.name, this.type, this.rawType, this.size, this.created, this.permissions);
 
+  /// Decodes one native entry at offset `o`; returns it with the number of bytes consumed (internal).
   static (FileInfo, int) decode(ByteData d, int o) {
     final t = d.getUint8(o);
     final raw = d.getUint16(o + 2, Endian.little);
@@ -449,9 +588,16 @@ final class FileInfo {
 
 /// Result of [Association.openFile]
 final class OpenFile {
+  /// Outstation-assigned handle for [Association.writeFileBlock] and [Association.closeFile]
   final int handle;
+
+  /// File size reported by the outstation, in bytes
   final int fileSize;
+
+  /// Largest block size the outstation accepts, in bytes
   final int maxBlockSize;
+
+  /// Creates an open-file result.
   const OpenFile(this.handle, this.fileSize, this.maxBlockSize);
 }
 
@@ -587,6 +733,8 @@ final class Association {
   /// Task / unsolicited events (requires `information: true` when adding the association)
   Stream<AssociationEvent> get information => _information.stream;
 
+  /// Sends a READ; completes once the response is received, its data having been
+  /// delivered on [measurements]. Throws [TaskException] on failure.
   Future<void> read(ReadRequest request) {
     final req = request.toBytes();
     return _rt.call((p, r) => dnp3_association_read(handle, req.address, req.length, p, r));
@@ -658,6 +806,10 @@ final class Association {
   Future<Duration> coldRestart() async =>
       Duration(milliseconds: await _rt.call((p, r) => dnp3_association_restart(handle, 1, p, r)) as int);
 
+  /// Sets the outstation's clock from this association's [TimeSource]: LAN (RECORD_CURRENT_TIME
+  /// then WRITE g50v3), non-LAN (DELAY_MEASURE then WRITE g50v1) or a direct WRITE of g50v1.
+  ///
+  /// Throws [TimeSyncException], or [TaskException] if the request fails.
   Future<void> synchronizeTime([TimeSyncProcedure procedure = TimeSyncProcedure.lan]) =>
       _rt.call((p, r) => dnp3_association_synchronize_time(handle, procedure.index, p, r));
 
@@ -673,11 +825,15 @@ final class Association {
   /// Returns the number of fragments still unacknowledged.
   int acknowledge([int count = 1]) => check(dnp3_association_ack(handle, count));
 
+  /// WRITEs analog input dead bands (group 34). Throws [WriteException] if the outstation
+  /// sets an IIN2 error bit, [TaskException] if the request fails.
   Future<void> writeDeadBands(List<DeadBandHeader> headers) {
     final req = DeadBandHeader.encodeAll(headers);
     return _rt.call((p, r) => dnp3_association_write_dead_bands(handle, req.address, req.length, p, r));
   }
 
+  /// Sends a link-layer REQUEST_LINK_STATUS and completes when the outstation answers.
+  /// Throws [TaskException] on failure.
   Future<void> checkLinkStatus() => _rt.call((p, r) => dnp3_association_check_link_status(handle, p, r));
 
   /// Periodically execute `request`. Results arrive on [measurements].
@@ -694,6 +850,8 @@ final class Association {
 
   // ------------------------------------------------------------------ files
 
+  /// Sends AUTHENTICATE_FILE and returns the key to pass as `authKey` to [openFile].
+  /// Throws [FileException] or [TaskException].
   Future<int> getFileAuthKey(String user, String password) async {
     final u = utf8Bytes(user);
     final pw = utf8Bytes(password);
@@ -704,6 +862,8 @@ final class Association {
         as int;
   }
 
+  /// Sends OPEN_FILE. `fileSize` and `permissions` apply when creating a file; out-of-range
+  /// arguments throw [RangeError]. Throws [FileException] or [TaskException].
   Future<OpenFile> openFile(
     String name, {
     int authKey = 0,
@@ -777,9 +937,11 @@ final class Association {
     await closeFile(file.handle);
   }
 
+  /// Sends CLOSE_FILE for a handle returned by [openFile].
   Future<void> closeFile(int fileHandle) =>
       _rt.call((p, r) => dnp3_association_close_file(handle, fileHandle, p, r));
 
+  /// Sends GET_FILE_INFO for `path`. Throws [FileException] or [TaskException].
   Future<FileInfo> getFileInfo(String path) async {
     final s = utf8Bytes(path);
     final data =
@@ -788,6 +950,9 @@ final class Association {
     return FileInfo.decode(ByteData.sublistView(data), 0).$1;
   }
 
+  /// Reads the entries of directory `path` (OPEN_FILE, READ, CLOSE_FILE); `maxSize` bounds
+  /// the bytes read. Credentials are sent only when both `user` and `password` are given.
+  /// Throws [FileException] or [TaskException].
   Future<List<FileInfo>> readDirectory(
     String path, {
     int maxBlockSize = 0xFFFF,
@@ -878,15 +1043,18 @@ const _g60v4 = Variation.group60Var4;
 
 /// A periodic poll
 final class Poll {
+  /// Opaque native handle; can be sent to another isolate and re-attached with [attach]
   final int handle;
   final NativeRuntime _rt;
   Poll._(this.handle, this._rt);
 
+  /// Uses a poll created in another isolate.
   factory Poll.attach(int handle) => Poll._(handle, NativeRuntime.current);
 
   /// Execute the poll now
   Future<void> demand() => _rt.call((p, r) => dnp3_poll_demand(handle, p, r));
 
+  /// Removes the poll from its association; the handle becomes invalid.
   Future<void> remove() => _rt.call((p, r) => dnp3_poll_remove(handle, p, r));
 }
 
@@ -917,6 +1085,7 @@ Object? decodeAssociationMessage(Object? message) {
 /// final assoc = await channel.addAssociation(10, eventPort: worker.port);
 /// ```
 final class MeasurementWorker {
+  /// The worker isolate
   final Isolate isolate;
 
   /// Pass this as `eventPort` to [MasterChannel.addAssociation]
@@ -924,6 +1093,8 @@ final class MeasurementWorker {
 
   MeasurementWorker._(this.isolate, this.port);
 
+  /// Spawns the worker. `onFragment` and `onEvent` run in the worker isolate (use top-level
+  /// or static functions); each fragment is acknowledged for flow control after `onFragment`.
   static Future<MeasurementWorker> spawn(
     void Function(MeasurementFragment fragment) onFragment, {
     void Function(AssociationEvent event)? onEvent,

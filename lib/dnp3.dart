@@ -10,7 +10,17 @@ export 'src/dnp3_runtime.dart';
 export 'src/errors.dart';
 export 'src/master.dart' hide decodeAssociationMessage;
 export 'src/master_server.dart';
-export 'src/measurements.dart' hide decodeAttribute;
+export 'src/measurements.dart'
+    hide
+        decodeAttribute,
+        readAnalogInput,
+        readAnalogOutputStatus,
+        readBinaryInput,
+        readBinaryOutputStatus,
+        readCounter,
+        readDoubleBitBinaryInput,
+        readFrozenAnalogInput,
+        readFrozenCounter;
 export 'src/outstation.dart';
 export 'src/requests.dart' hide encodeAttribute;
 export 'src/types.dart';

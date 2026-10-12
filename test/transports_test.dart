@@ -14,10 +14,13 @@ Future<int> freeUdpPort() async {
   return p;
 }
 
+/// Static value of analog input `index`. Integrity reads also return buffered events, and
+/// whether the startup integrity poll consumed them first is a race; events use the
+/// default event variation (g32v1, 32-bit integer), so they are skipped.
 double? analogValue(List<MeasurementFragment> fragments, int index) {
   for (final f in fragments) {
     for (final b in f.blocks) {
-      if (b is AnalogInputBlock) {
+      if (b is AnalogInputBlock && !b.isEvent) {
         for (final a in b) {
           if (a.index == index) return a.value;
         }

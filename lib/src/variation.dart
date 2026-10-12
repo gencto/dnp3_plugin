@@ -2,8 +2,13 @@
 
 /// A DNP3 object group / variation pair.
 final class Variation {
+  /// Object group number
   final int group;
+
+  /// Variation number within the group (0 = any variation)
   final int variation;
+
+  /// Description from IEEE 1815 (as named by the dnp3 crate)
   final String description;
 
   const Variation._(this.group, this.variation, this.description);
@@ -18,155 +23,419 @@ final class Variation {
   /// Octet string event (group 111) sized by variation
   factory Variation.group111(int size) => Variation._(111, size, 'Octet String Event - Sized by variation');
 
+  /// g0v254: Device Attributes - Non-Specific All Attributes Request
   static const group0Var254 = Variation._(0, 254, 'Device Attributes - Non-Specific All Attributes Request');
+
+  /// g1v0: Binary Input - Any Variation
   static const group1Var0 = Variation._(1, 0, 'Binary Input - Any Variation');
+
+  /// g1v1: Binary Input - Packed Format
   static const group1Var1 = Variation._(1, 1, 'Binary Input - Packed Format');
+
+  /// g1v2: Binary Input - With Flags
   static const group1Var2 = Variation._(1, 2, 'Binary Input - With Flags');
+
+  /// g2v0: Binary Input Event - Any Variation
   static const group2Var0 = Variation._(2, 0, 'Binary Input Event - Any Variation');
+
+  /// g2v1: Binary Input Event - Without Time
   static const group2Var1 = Variation._(2, 1, 'Binary Input Event - Without Time');
+
+  /// g2v2: Binary Input Event - With Absolute Time
   static const group2Var2 = Variation._(2, 2, 'Binary Input Event - With Absolute Time');
+
+  /// g2v3: Binary Input Event - With Relative Time
   static const group2Var3 = Variation._(2, 3, 'Binary Input Event - With Relative Time');
+
+  /// g3v0: Double-bit Binary Input - Any Variation
   static const group3Var0 = Variation._(3, 0, 'Double-bit Binary Input - Any Variation');
+
+  /// g3v1: Double-bit Binary Input - Packed Format
   static const group3Var1 = Variation._(3, 1, 'Double-bit Binary Input - Packed Format');
+
+  /// g3v2: Double-bit Binary Input - With Flags
   static const group3Var2 = Variation._(3, 2, 'Double-bit Binary Input - With Flags');
+
+  /// g4v0: Double-bit Binary Input Event - Any Variation
   static const group4Var0 = Variation._(4, 0, 'Double-bit Binary Input Event - Any Variation');
+
+  /// g4v1: Double-bit Binary Input Event - Without Time
   static const group4Var1 = Variation._(4, 1, 'Double-bit Binary Input Event - Without Time');
+
+  /// g4v2: Double-bit Binary Input Event - With Absolute Time
   static const group4Var2 = Variation._(4, 2, 'Double-bit Binary Input Event - With Absolute Time');
+
+  /// g4v3: Double-bit Binary Input Event - With Relative Time
   static const group4Var3 = Variation._(4, 3, 'Double-bit Binary Input Event - With Relative Time');
+
+  /// g10v0: Binary Output - Any Variation
   static const group10Var0 = Variation._(10, 0, 'Binary Output - Any Variation');
+
+  /// g10v1: Binary Output - Packed Format
   static const group10Var1 = Variation._(10, 1, 'Binary Output - Packed Format');
+
+  /// g10v2: Binary Output - Output Status With Flags
   static const group10Var2 = Variation._(10, 2, 'Binary Output - Output Status With Flags');
+
+  /// g11v0: Binary Output Event - Any Variation
   static const group11Var0 = Variation._(11, 0, 'Binary Output Event - Any Variation');
+
+  /// g11v1: Binary Output Event - Output Status Without Time
   static const group11Var1 = Variation._(11, 1, 'Binary Output Event - Output Status Without Time');
+
+  /// g11v2: Binary Output Event - Output Status With Time
   static const group11Var2 = Variation._(11, 2, 'Binary Output Event - Output Status With Time');
+
+  /// g12v1: Binary Command - Control Relay Output Block
   static const group12Var1 = Variation._(12, 1, 'Binary Command - Control Relay Output Block');
+
+  /// g13v1: Binary Output Command Event - Without Time
   static const group13Var1 = Variation._(13, 1, 'Binary Output Command Event - Without Time');
+
+  /// g13v2: Binary Output Command Event - With Time
   static const group13Var2 = Variation._(13, 2, 'Binary Output Command Event - With Time');
+
+  /// g20v0: Counter - Any Variation
   static const group20Var0 = Variation._(20, 0, 'Counter - Any Variation');
+
+  /// g20v1: Counter - 32-bit With Flag
   static const group20Var1 = Variation._(20, 1, 'Counter - 32-bit With Flag');
+
+  /// g20v2: Counter - 16-bit With Flag
   static const group20Var2 = Variation._(20, 2, 'Counter - 16-bit With Flag');
+
+  /// g20v5: Counter - 32-bit Without Flag
   static const group20Var5 = Variation._(20, 5, 'Counter - 32-bit Without Flag');
+
+  /// g20v6: Counter - 16-bit Without Flag
   static const group20Var6 = Variation._(20, 6, 'Counter - 16-bit Without Flag');
+
+  /// g21v0: Frozen Counter - Any Variation
   static const group21Var0 = Variation._(21, 0, 'Frozen Counter - Any Variation');
+
+  /// g21v1: Frozen Counter - 32-bit With Flag
   static const group21Var1 = Variation._(21, 1, 'Frozen Counter - 32-bit With Flag');
+
+  /// g21v2: Frozen Counter - 16-bit With Flag
   static const group21Var2 = Variation._(21, 2, 'Frozen Counter - 16-bit With Flag');
+
+  /// g21v5: Frozen Counter - 32-bit With Flag and Time
   static const group21Var5 = Variation._(21, 5, 'Frozen Counter - 32-bit With Flag and Time');
+
+  /// g21v6: Frozen Counter - 16-bit With Flag and Time
   static const group21Var6 = Variation._(21, 6, 'Frozen Counter - 16-bit With Flag and Time');
+
+  /// g21v9: Frozen Counter - 32-bit Without Flag
   static const group21Var9 = Variation._(21, 9, 'Frozen Counter - 32-bit Without Flag');
+
+  /// g21v10: Frozen Counter - 16-bit Without Flag
   static const group21Var10 = Variation._(21, 10, 'Frozen Counter - 16-bit Without Flag');
+
+  /// g22v0: Counter Event - Any Variation
   static const group22Var0 = Variation._(22, 0, 'Counter Event - Any Variation');
+
+  /// g22v1: Counter Event - 32-bit With Flag
   static const group22Var1 = Variation._(22, 1, 'Counter Event - 32-bit With Flag');
+
+  /// g22v2: Counter Event - 16-bit With Flag
   static const group22Var2 = Variation._(22, 2, 'Counter Event - 16-bit With Flag');
+
+  /// g22v5: Counter Event - 32-bit With Flag and Time
   static const group22Var5 = Variation._(22, 5, 'Counter Event - 32-bit With Flag and Time');
+
+  /// g22v6: Counter Event - 16-bit With Flag and Time
   static const group22Var6 = Variation._(22, 6, 'Counter Event - 16-bit With Flag and Time');
+
+  /// g23v0: Frozen Counter Event - Any Variation
   static const group23Var0 = Variation._(23, 0, 'Frozen Counter Event - Any Variation');
+
+  /// g23v1: Frozen Counter Event - 32-bit With Flag
   static const group23Var1 = Variation._(23, 1, 'Frozen Counter Event - 32-bit With Flag');
+
+  /// g23v2: Frozen Counter Event - 16-bit With Flag
   static const group23Var2 = Variation._(23, 2, 'Frozen Counter Event - 16-bit With Flag');
+
+  /// g23v5: Frozen Counter Event - 32-bit With Flag and Time
   static const group23Var5 = Variation._(23, 5, 'Frozen Counter Event - 32-bit With Flag and Time');
+
+  /// g23v6: Frozen Counter Event - 16-bit With Flag and Time
   static const group23Var6 = Variation._(23, 6, 'Frozen Counter Event - 16-bit With Flag and Time');
+
+  /// g30v0: Analog Input - Any Variation
   static const group30Var0 = Variation._(30, 0, 'Analog Input - Any Variation');
+
+  /// g30v1: Analog Input - 32-bit With Flag
   static const group30Var1 = Variation._(30, 1, 'Analog Input - 32-bit With Flag');
+
+  /// g30v2: Analog Input - 16-bit With Flag
   static const group30Var2 = Variation._(30, 2, 'Analog Input - 16-bit With Flag');
+
+  /// g30v3: Analog Input - 32-bit Without Flag
   static const group30Var3 = Variation._(30, 3, 'Analog Input - 32-bit Without Flag');
+
+  /// g30v4: Analog Input - 16-bit Without Flag
   static const group30Var4 = Variation._(30, 4, 'Analog Input - 16-bit Without Flag');
+
+  /// g30v5: Analog Input - Single-precision With Flag
   static const group30Var5 = Variation._(30, 5, 'Analog Input - Single-precision With Flag');
+
+  /// g30v6: Analog Input - Double-precision With Flag
   static const group30Var6 = Variation._(30, 6, 'Analog Input - Double-precision With Flag');
+
+  /// g31v0: Frozen Analog Input - Any Variation
   static const group31Var0 = Variation._(31, 0, 'Frozen Analog Input - Any Variation');
+
+  /// g31v1: Frozen Analog Input - 32-bit With Flag
   static const group31Var1 = Variation._(31, 1, 'Frozen Analog Input - 32-bit With Flag');
+
+  /// g31v2: Frozen Analog Input - 16-bit With Flag
   static const group31Var2 = Variation._(31, 2, 'Frozen Analog Input - 16-bit With Flag');
+
+  /// g31v3: Frozen Analog Input - 32-bit with Flag and Time-of-Freeze
   static const group31Var3 = Variation._(31, 3, 'Frozen Analog Input - 32-bit with Flag and Time-of-Freeze');
+
+  /// g31v4: Frozen Analog Input - 16-bit with Flag and Time-of-Freeze
   static const group31Var4 = Variation._(31, 4, 'Frozen Analog Input - 16-bit with Flag and Time-of-Freeze');
+
+  /// g31v5: Frozen Analog Input - 32-bit Without Flag
   static const group31Var5 = Variation._(31, 5, 'Frozen Analog Input - 32-bit Without Flag');
+
+  /// g31v6: Frozen Analog Input - 16-bit Without Flag
   static const group31Var6 = Variation._(31, 6, 'Frozen Analog Input - 16-bit Without Flag');
+
+  /// g31v7: Frozen Analog Input - Single-precision With Flag
   static const group31Var7 = Variation._(31, 7, 'Frozen Analog Input - Single-precision With Flag');
+
+  /// g31v8: Frozen Analog Input - Double-precision With Flag
   static const group31Var8 = Variation._(31, 8, 'Frozen Analog Input - Double-precision With Flag');
+
+  /// g32v0: Analog Input Event - Any Variation
   static const group32Var0 = Variation._(32, 0, 'Analog Input Event - Any Variation');
+
+  /// g32v1: Analog Input Event - 32-bit With Flag
   static const group32Var1 = Variation._(32, 1, 'Analog Input Event - 32-bit With Flag');
+
+  /// g32v2: Analog Input Event - 16-bit With Flag
   static const group32Var2 = Variation._(32, 2, 'Analog Input Event - 16-bit With Flag');
+
+  /// g32v3: Analog Input Event - 32-bit With Flag and Time
   static const group32Var3 = Variation._(32, 3, 'Analog Input Event - 32-bit With Flag and Time');
+
+  /// g32v4: Analog Input Event - 16-bit With Flag and Time
   static const group32Var4 = Variation._(32, 4, 'Analog Input Event - 16-bit With Flag and Time');
+
+  /// g32v5: Analog Input Event - Single-precision With Flag
   static const group32Var5 = Variation._(32, 5, 'Analog Input Event - Single-precision With Flag');
+
+  /// g32v6: Analog Input Event - Double-precision With Flag
   static const group32Var6 = Variation._(32, 6, 'Analog Input Event - Double-precision With Flag');
+
+  /// g32v7: Analog Input Event - Single-precision With Flag and Time
   static const group32Var7 = Variation._(32, 7, 'Analog Input Event - Single-precision With Flag and Time');
+
+  /// g32v8: Analog Input Event - Double-precision With Flag and Time
   static const group32Var8 = Variation._(32, 8, 'Analog Input Event - Double-precision With Flag and Time');
+
+  /// g33v0: Frozen Analog Input Event - Any Variation
   static const group33Var0 = Variation._(33, 0, 'Frozen Analog Input Event - Any Variation');
+
+  /// g33v1: Frozen Analog Input Event - 32-bit With Flag
   static const group33Var1 = Variation._(33, 1, 'Frozen Analog Input Event - 32-bit With Flag');
+
+  /// g33v2: Frozen Analog Input Event - 16-bit With Flag
   static const group33Var2 = Variation._(33, 2, 'Frozen Analog Input Event - 16-bit With Flag');
+
+  /// g33v3: Frozen Analog Input Event - 32-bit with Flag and Time-of-Freeze
   static const group33Var3 = Variation._(
     33,
     3,
     'Frozen Analog Input Event - 32-bit with Flag and Time-of-Freeze',
   );
+
+  /// g33v4: Frozen Analog Input Event - 16-bit with Flag and Time-of-Freeze
   static const group33Var4 = Variation._(
     33,
     4,
     'Frozen Analog Input Event - 16-bit with Flag and Time-of-Freeze',
   );
+
+  /// g33v5: Frozen Analog Input Event - Single-precision With Flag
   static const group33Var5 = Variation._(33, 5, 'Frozen Analog Input Event - Single-precision With Flag');
+
+  /// g33v6: Frozen Analog Input Event - Double-precision With Flag
   static const group33Var6 = Variation._(33, 6, 'Frozen Analog Input Event - Double-precision With Flag');
+
+  /// g33v7: Frozen Analog Input Event - Single-precision With Flag and Time
   static const group33Var7 = Variation._(
     33,
     7,
     'Frozen Analog Input Event - Single-precision With Flag and Time',
   );
+
+  /// g33v8: Frozen Analog Input Event - Double-precision With Flag and Time
   static const group33Var8 = Variation._(
     33,
     8,
     'Frozen Analog Input Event - Double-precision With Flag and Time',
   );
+
+  /// g34v0: Analog Input Reporting Deadband - Any Variation
   static const group34Var0 = Variation._(34, 0, 'Analog Input Reporting Deadband - Any Variation');
+
+  /// g34v1: Analog Input Reporting Deadband - 16-bit
   static const group34Var1 = Variation._(34, 1, 'Analog Input Reporting Deadband - 16-bit');
+
+  /// g34v2: Analog Input Reporting Deadband - 32-bit
   static const group34Var2 = Variation._(34, 2, 'Analog Input Reporting Deadband - 32-bit');
+
+  /// g34v3: Analog Input Reporting Deadband - Single-precision
   static const group34Var3 = Variation._(34, 3, 'Analog Input Reporting Deadband - Single-precision');
+
+  /// g40v0: Analog Output Status - Any Variation
   static const group40Var0 = Variation._(40, 0, 'Analog Output Status - Any Variation');
+
+  /// g40v1: Analog Output Status - 32-bit With Flag
   static const group40Var1 = Variation._(40, 1, 'Analog Output Status - 32-bit With Flag');
+
+  /// g40v2: Analog Output Status - 16-bit With Flag
   static const group40Var2 = Variation._(40, 2, 'Analog Output Status - 16-bit With Flag');
+
+  /// g40v3: Analog Output Status - Single-precision With Flag
   static const group40Var3 = Variation._(40, 3, 'Analog Output Status - Single-precision With Flag');
+
+  /// g40v4: Analog Output Status - Double-precision With Flag
   static const group40Var4 = Variation._(40, 4, 'Analog Output Status - Double-precision With Flag');
+
+  /// g41v1: Analog Output - 32-bit With Flag
   static const group41Var1 = Variation._(41, 1, 'Analog Output - 32-bit With Flag');
+
+  /// g41v2: Analog Output - 16-bit With Flag
   static const group41Var2 = Variation._(41, 2, 'Analog Output - 16-bit With Flag');
+
+  /// g41v3: Analog Output - Single-precision
   static const group41Var3 = Variation._(41, 3, 'Analog Output - Single-precision');
+
+  /// g41v4: Analog Output - Double-precision
   static const group41Var4 = Variation._(41, 4, 'Analog Output - Double-precision');
+
+  /// g42v0: Analog Output Event - Any Variation
   static const group42Var0 = Variation._(42, 0, 'Analog Output Event - Any Variation');
+
+  /// g42v1: Analog Output Event - 32-bit With Flag
   static const group42Var1 = Variation._(42, 1, 'Analog Output Event - 32-bit With Flag');
+
+  /// g42v2: Analog Output Event - 16-bit With Flag
   static const group42Var2 = Variation._(42, 2, 'Analog Output Event - 16-bit With Flag');
+
+  /// g42v3: Analog Output Event - 32-bit With Flag and Time
   static const group42Var3 = Variation._(42, 3, 'Analog Output Event - 32-bit With Flag and Time');
+
+  /// g42v4: Analog Output Event - 16-bit With Flag and Time
   static const group42Var4 = Variation._(42, 4, 'Analog Output Event - 16-bit With Flag and Time');
+
+  /// g42v5: Analog Output Event - Single-precision With Flag
   static const group42Var5 = Variation._(42, 5, 'Analog Output Event - Single-precision With Flag');
+
+  /// g42v6: Analog Output Event - Double-precision With Flag
   static const group42Var6 = Variation._(42, 6, 'Analog Output Event - Double-precision With Flag');
+
+  /// g42v7: Analog Output Event - Single-precision With Flag and Time
   static const group42Var7 = Variation._(42, 7, 'Analog Output Event - Single-precision With Flag and Time');
+
+  /// g42v8: Analog Output Event - Double-precision With Flag and Time
   static const group42Var8 = Variation._(42, 8, 'Analog Output Event - Double-precision With Flag and Time');
+
+  /// g43v1: Analog Output Command Event - 32-bit
   static const group43Var1 = Variation._(43, 1, 'Analog Output Command Event - 32-bit');
+
+  /// g43v2: Analog Output Command Event - 16-bit
   static const group43Var2 = Variation._(43, 2, 'Analog Output Command Event - 16-bit');
+
+  /// g43v3: Analog Output Command Event - 32-bit With Time
   static const group43Var3 = Variation._(43, 3, 'Analog Output Command Event - 32-bit With Time');
+
+  /// g43v4: Analog Output Command Event - 16-bit With Time
   static const group43Var4 = Variation._(43, 4, 'Analog Output Command Event - 16-bit With Time');
+
+  /// g43v5: Analog Output Command Event - Single-precision
   static const group43Var5 = Variation._(43, 5, 'Analog Output Command Event - Single-precision');
+
+  /// g43v6: Analog Output Command Event - Double-precision
   static const group43Var6 = Variation._(43, 6, 'Analog Output Command Event - Double-precision');
+
+  /// g43v7: Analog Output Command Event - Single-precision With Time
   static const group43Var7 = Variation._(43, 7, 'Analog Output Command Event - Single-precision With Time');
+
+  /// g43v8: Analog Output Command Event - Double-precision With Time
   static const group43Var8 = Variation._(43, 8, 'Analog Output Command Event - Double-precision With Time');
+
+  /// g50v1: Time and Date - Absolute Time
   static const group50Var1 = Variation._(50, 1, 'Time and Date - Absolute Time');
+
+  /// g50v2: Time and Date - Absolute time and interval
   static const group50Var2 = Variation._(50, 2, 'Time and Date - Absolute time and interval');
+
+  /// g50v3: Time and Date - Absolute Time at last recorded time
   static const group50Var3 = Variation._(50, 3, 'Time and Date - Absolute Time at last recorded time');
+
+  /// g50v4: Time and Date - Indexed absolute time and long interval
   static const group50Var4 = Variation._(50, 4, 'Time and Date - Indexed absolute time and long interval');
+
+  /// g51v1: Time and Date CTO - Absolute time, synchronized
   static const group51Var1 = Variation._(51, 1, 'Time and Date CTO - Absolute time, synchronized');
+
+  /// g51v2: Time and Date CTO - Absolute time, unsynchronized
   static const group51Var2 = Variation._(51, 2, 'Time and Date CTO - Absolute time, unsynchronized');
+
+  /// g52v1: Time Delay - Coarse
   static const group52Var1 = Variation._(52, 1, 'Time Delay - Coarse');
+
+  /// g52v2: Time Delay - Fine
   static const group52Var2 = Variation._(52, 2, 'Time Delay - Fine');
+
+  /// g60v1: Class Data - Class 0
   static const group60Var1 = Variation._(60, 1, 'Class Data - Class 0');
+
+  /// g60v2: Class Data - Class 1
   static const group60Var2 = Variation._(60, 2, 'Class Data - Class 1');
+
+  /// g60v3: Class Data - Class 2
   static const group60Var3 = Variation._(60, 3, 'Class Data - Class 2');
+
+  /// g60v4: Class Data - Class 3
   static const group60Var4 = Variation._(60, 4, 'Class Data - Class 3');
+
+  /// g70v2: File-control - authentication
   static const group70Var2 = Variation._(70, 2, 'File-control - authentication');
+
+  /// g70v3: File-control - file command
   static const group70Var3 = Variation._(70, 3, 'File-control - file command');
+
+  /// g70v4: File-control - file command status
   static const group70Var4 = Variation._(70, 4, 'File-control - file command status');
+
+  /// g70v5: File-control - file transport
   static const group70Var5 = Variation._(70, 5, 'File-control - file transport');
+
+  /// g70v6: File-control - file transport status
   static const group70Var6 = Variation._(70, 6, 'File-control - file transport status');
+
+  /// g70v7: File-control - file descriptor
   static const group70Var7 = Variation._(70, 7, 'File-control - file descriptor');
+
+  /// g70v8: File-control - file specification string
   static const group70Var8 = Variation._(70, 8, 'File-control - file specification string');
+
+  /// g80v1: Internal Indications - Packed Format
   static const group80Var1 = Variation._(80, 1, 'Internal Indications - Packed Format');
+
+  /// g102v0: Unsigned Integer - Any Variation
   static const group102Var0 = Variation._(102, 0, 'Unsigned Integer - Any Variation');
+
+  /// g102v1: Unsigned Integer - 8-bit
   static const group102Var1 = Variation._(102, 1, 'Unsigned Integer - 8-bit');
 
+  /// Every fixed group / variation known to the dnp3 crate
   static const List<Variation> values = [
     group0Var254,
     group1Var0,

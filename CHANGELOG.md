@@ -20,6 +20,12 @@
 * Internal helpers (`decodeResults`, `decodeAssociationMessage`, `decodeAttribute`,
   `encodeAttribute`, the `ClientEvents` dispatch methods) are no longer part of the
   public API.
+* A Dart restart callback that throws is answered as "not supported" (it was reported to
+  the master as a restart in 0 ms); unknown application requests use the native fallback.
+* `Database.getRange` on a destroyed outstation throws `InvalidHandleException`.
+* `AssociationEvent.iin2` keeps the IIN2 byte of `rejectedByIin2` task failures.
+* `ReadHeader.range` and `DeadBandHeader` validate their indices and values in Dart.
+* Every public API member is documented; `public_member_api_docs` is enforced.
 * The native library is built only as a dynamic library; ABI version 3
   (`dnp3_association_set_time_offset` was removed, `Association.setTimeOffset` stays).
 
