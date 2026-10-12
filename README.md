@@ -420,22 +420,16 @@ master-server mode, plus callbacks, device attributes, isolates, logging and han
 
 ## CI/CD
 
-The GitHub Actions workflows are delivered as a patch: [`ci/0001-ci-add-GitHub-Actions-workflows.patch`](ci/).
-Apply it with:
+GitHub Actions (`.github/workflows/`):
 
-```sh
-git am ci/0001-ci-add-GitHub-Actions-workflows.patch
-```
-
-It adds:
-
-* `ci.yml` — Rust fmt/clippy/tests; Dart analyze/format/tests + a quick benchmark on Linux
-  x64/arm64, macOS and Windows; native cross builds; Flutter example builds for Android,
-  iOS, macOS, Linux and Windows.
-* `native-build.yml` — reusable matrix building all 13 native targets.
+* `ci.yml` — on pushes to `main` and pull requests: Rust fmt/clippy/tests; Dart
+  analyze/format/tests + a quick benchmark on Linux x64/arm64, macOS and Windows; native
+  builds for all 13 targets; Flutter example builds for Android, iOS, macOS, Linux and
+  Windows.
+* `native-build.yml` — reusable matrix building every native target.
 * `release.yml` — on `v*` tags: builds all targets, publishes `dnp3-native-prebuilt.zip`.
 * `benchmark.yml` — weekly / manual full benchmark on all desktop OSes.
-* `dependabot.yml`.
+* `dependabot.yml` — weekly updates of actions, cargo and pub dependencies.
 
 ## Repository layout
 
@@ -450,5 +444,4 @@ test/                      integration tests
 example/                   Dart CLI examples and a Flutter app
 doc/wire_format.md         binary formats exchanged with native code
 tool/                      code generators (variation tables)
-ci/                        GitHub Actions workflows as a git patch
 ```
