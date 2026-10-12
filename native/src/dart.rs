@@ -190,7 +190,11 @@ pub(crate) fn post(port: DartPort, kind: i64, a: i64, b: i64, payload: Payload) 
         Payload::Int(x) => CObject::int(x),
         Payload::Str(s) => {
             // interior NULs are not representable, replace them
-            let s = if s.contains('\0') { s.replace('\0', " ") } else { s };
+            let s = if s.contains('\0') {
+                s.replace('\0', " ")
+            } else {
+                s
+            };
             let cs = CString::new(s).unwrap_or_default();
             let obj = CObject {
                 ty: CObjectType::String,

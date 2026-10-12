@@ -112,7 +112,7 @@ final class ByteWriter {
     pad4();
   }
 
-  /// Write a 24-byte database op directly: header + 4 option bytes + 4 pad + value + time.
+  /// Write a 24-byte database update op directly: header, 4 option bytes, value, time.
   /// Hot path of outstation updates.
   void dbUpdate(
     int type,

@@ -214,6 +214,98 @@ void main() {
     });
   });
 
+  group('more master features', () {
+    late Pair pair;
+
+    setUp(() async {
+      pair = await Pair.create(
+        handlers: const OutstationHandlers(
+          application: ApplicationConfig(
+            supportWriteAnalogDeadBands: true,
+            warmRestart: RestartMode.milliseconds,
+            warmRestartDelay: 250,
+          ),
+          information: true,
+        ),
+      );
+    });
+
+    tearDown(() => pair.close());
+
+    test('dead band writes are reported to the outstation', () async {
+      final events = <OutstationEvent>[];
+      pair.outstation.events.listen(events.add);
+      await pair.association.writeDeadBands([
+        const DeadBandHeader.g34v3({0: 1.5, 1: 2.5}),
+        const DeadBandHeader.g34v1({2: 7}),
+      ]);
+      await eventually(() => events.whereType<DeadBandsWritten>().length == 2);
+      final all = {for (final e in events.whereType<DeadBandsWritten>()) ...e.deadBands};
+      expect(all, {0: 1.5, 1: 2.5, 2: 7.0});
+    });
+
+    test('warm restart with configured delay', () async {
+      expect(await pair.association.warmRestart(), const Duration(milliseconds: 250));
+    });
+
+    test('unsolicited responses deliver events', () async {
+      await pair.association.enableUnsolicited(const EventClasses.all());
+      pair.fragments.clear();
+      pair.outstation.transaction((tx) => tx.updateBinaryInput(6, true));
+      await eventually(() => pair.fragments.any((f) => f.isUnsolicited && f.blockCount > 0));
+      await pair.association.disableUnsolicited(const EventClasses.all());
+    });
+
+    test('application IIN bits reach the master', () async {
+      pair.outstation.setApplicationIin(deviceTrouble: true);
+      final f = await pair.association.readWithHandler(const ReadRequest.classScan(Classes.class0()));
+      expect(f.first.iin.deviceTrouble, isTrue);
+      pair.outstation.setApplicationIin();
+    });
+
+    test('outstation information events', () async {
+      final infos = <OutstationInfo>[];
+      pair.outstation.information.listen(infos.add);
+      await pair.association.read(const ReadRequest.integrity());
+      await eventually(() => infos.any((i) => i.type == OutstationInfoType.processRequestFromIdle));
+    });
+
+    test('file operations against an outstation without file support fail cleanly', () async {
+      await expectLater(pair.association.getFileInfo('/x.txt'), throwsA(isA<Dnp3Exception>()));
+    });
+
+    test('freeze at time header is encoded', () async {
+      final headers = RequestHeaders()
+        ..allObjects(Variation.group20Var0)
+        ..timeAndInterval(Dnp3Time.now(), 1000);
+      await expectLater(
+        pair.association.sendAndExpectEmptyResponse(FunctionCode.freezeAtTime, headers),
+        throwsA(isA<Dnp3Exception>()), // freeze not supported by this outstation
+      );
+    });
+
+    test('poll and association removal', () async {
+      final poll = await pair.association.addPoll(const ReadRequest.events(), const Duration(seconds: 1));
+      expect(Dnp3.objectCounts.$3, greaterThan(0));
+      await poll.remove();
+      await pair.association.remove();
+      await expectLater(
+        pair.association.read(const ReadRequest.integrity()),
+        throwsA(isA<InvalidHandleException>()),
+      );
+    });
+
+    test('invalid configuration is rejected synchronously', () {
+      expect(
+        () => MasterChannel.tcpClient(
+          config: const MasterChannelConfig(masterAddress: 0xFFFF),
+          endpoints: ['127.0.0.1:1'],
+        ),
+        throwsA(isA<ConfigException>()),
+      );
+    });
+  });
+
   group('callback mode', () {
     test('control callback decides and updates the database atomically', () async {
       final requests = <ControlRequest>[];

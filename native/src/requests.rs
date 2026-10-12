@@ -103,10 +103,8 @@ pub fn headers(data: &[u8]) -> Result<Headers> {
                 r.skip(3)?;
                 let interval = r.u32()?;
                 let time = r.u64()?;
-                headers = headers.add_freeze_interval(FreezeInterval::new(
-                    Timestamp::new(time),
-                    interval,
-                ));
+                headers = headers
+                    .add_freeze_interval(FreezeInterval::new(Timestamp::new(time), interval));
             }
             6 => {
                 r.skip(3)?;
@@ -165,7 +163,10 @@ pub fn control_code(raw: u8) -> ControlCode {
 }
 
 pub fn control_code_byte(c: &ControlCode) -> u8 {
-    (c.tcc.as_u8() << 6) | ((c.clear as u8) << 5) | ((c.queue as u8) << 4) | (c.op_type.as_u8() & 0x0F)
+    (c.tcc.as_u8() << 6)
+        | ((c.clear as u8) << 5)
+        | ((c.queue as u8) << 4)
+        | (c.op_type.as_u8() & 0x0F)
 }
 
 /// Command request:
@@ -194,8 +195,8 @@ pub fn command(data: &[u8]) -> Result<(CommandMode, CommandHeaders)> {
         if wide {
             builder.add_u16(cmd, index);
         } else {
-            let index =
-                u8::try_from(index).map_err(|_| Error::arg("index exceeds 255 for 1-byte prefix"))?;
+            let index = u8::try_from(index)
+                .map_err(|_| Error::arg("index exceeds 255 for 1-byte prefix"))?;
             builder.add_u8(cmd, index);
         }
         Ok(())
@@ -233,21 +234,53 @@ pub fn command(data: &[u8]) -> Result<(CommandMode, CommandHeaders)> {
                 1 => {
                     r.u16()?;
                     let value = r.i32()?;
-                    add(&mut builder, wide, Group41Var1 { value, status: CommandStatus::Success }, index)?;
+                    add(
+                        &mut builder,
+                        wide,
+                        Group41Var1 {
+                            value,
+                            status: CommandStatus::Success,
+                        },
+                        index,
+                    )?;
                 }
                 2 => {
                     let value = r.i16()?;
-                    add(&mut builder, wide, Group41Var2 { value, status: CommandStatus::Success }, index)?;
+                    add(
+                        &mut builder,
+                        wide,
+                        Group41Var2 {
+                            value,
+                            status: CommandStatus::Success,
+                        },
+                        index,
+                    )?;
                 }
                 3 => {
                     r.u16()?;
                     let value = r.f32()?;
-                    add(&mut builder, wide, Group41Var3 { value, status: CommandStatus::Success }, index)?;
+                    add(
+                        &mut builder,
+                        wide,
+                        Group41Var3 {
+                            value,
+                            status: CommandStatus::Success,
+                        },
+                        index,
+                    )?;
                 }
                 4 => {
                     r.skip(6)?;
                     let value = r.f64()?;
-                    add(&mut builder, wide, Group41Var4 { value, status: CommandStatus::Success }, index)?;
+                    add(
+                        &mut builder,
+                        wide,
+                        Group41Var4 {
+                            value,
+                            status: CommandStatus::Success,
+                        },
+                        index,
+                    )?;
                 }
                 x => return Err(Error::arg(format!("unknown command type {x}"))),
             }
@@ -283,9 +316,9 @@ pub fn dead_bands(data: &[u8]) -> Result<Vec<DeadBandHeader>> {
                     .map(|(i, v)| Ok((narrow(*i)?, *v as u16)))
                     .collect::<Result<_>>()?,
             ),
-            (1, true) => DeadBandHeader::group34_var1_u16(
-                raw.iter().map(|(i, v)| (*i, *v as u16)).collect(),
-            ),
+            (1, true) => {
+                DeadBandHeader::group34_var1_u16(raw.iter().map(|(i, v)| (*i, *v as u16)).collect())
+            }
             (2, false) => DeadBandHeader::group34_var2_u8(
                 raw.iter()
                     .map(|(i, v)| Ok((narrow(*i)?, *v)))

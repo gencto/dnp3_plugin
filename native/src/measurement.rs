@@ -203,7 +203,8 @@ impl FragmentBuilder {
                 self.w.u8(g);
                 self.w.u8(v);
                 self.w.u8(info.qualifier.as_u8());
-                self.w.u8((info.is_event as u8) | ((info.has_flags as u8) << 1));
+                self.w
+                    .u8((info.is_event as u8) | ((info.has_flags as u8) << 1));
             }
             None => self.w.zeros(4),
         }
@@ -404,9 +405,16 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (DoubleBitBinaryInput, u16)>,
     ) {
-        block!(self, kind::DOUBLE_BIT_BINARY_INPUT, info, 16, iter, |w, x, i| {
-            record::binary(w, i, double_bit_to_u8(x.value), x.flags.value, x.time);
-        })
+        block!(
+            self,
+            kind::DOUBLE_BIT_BINARY_INPUT,
+            info,
+            16,
+            iter,
+            |w, x, i| {
+                record::binary(w, i, double_bit_to_u8(x.value), x.flags.value, x.time);
+            }
+        )
     }
 
     fn handle_binary_output_status(
@@ -414,9 +422,16 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (BinaryOutputStatus, u16)>,
     ) {
-        block!(self, kind::BINARY_OUTPUT_STATUS, info, 16, iter, |w, x, i| {
-            record::binary(w, i, x.value as u8, x.flags.value, x.time);
-        })
+        block!(
+            self,
+            kind::BINARY_OUTPUT_STATUS,
+            info,
+            16,
+            iter,
+            |w, x, i| {
+                record::binary(w, i, x.value as u8, x.flags.value, x.time);
+            }
+        )
     }
 
     fn handle_counter(&mut self, info: HeaderInfo, iter: &mut dyn Iterator<Item = (Counter, u16)>) {
@@ -450,9 +465,16 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (FrozenAnalogInput, u16)>,
     ) {
-        block!(self, kind::FROZEN_ANALOG_INPUT, info, 24, iter, |w, x, i| {
-            record::analog(w, i, x.value, x.flags.value, x.time);
-        })
+        block!(
+            self,
+            kind::FROZEN_ANALOG_INPUT,
+            info,
+            24,
+            iter,
+            |w, x, i| {
+                record::analog(w, i, x.value, x.flags.value, x.time);
+            }
+        )
     }
 
     fn handle_analog_input_dead_band(
@@ -460,18 +482,25 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (AnalogInputDeadBand, u16)>,
     ) {
-        block!(self, kind::ANALOG_INPUT_DEAD_BAND, info, 16, iter, |w, x, i| {
-            let (k, v) = match x {
-                AnalogInputDeadBand::U16(v) => (0u8, v as f64),
-                AnalogInputDeadBand::U32(v) => (1, v as f64),
-                AnalogInputDeadBand::F32(v) => (2, v as f64),
-            };
-            w.u16(i);
-            w.u8(k);
-            w.u8(0);
-            w.u32(0);
-            w.f64(v);
-        })
+        block!(
+            self,
+            kind::ANALOG_INPUT_DEAD_BAND,
+            info,
+            16,
+            iter,
+            |w, x, i| {
+                let (k, v) = match x {
+                    AnalogInputDeadBand::U16(v) => (0u8, v as f64),
+                    AnalogInputDeadBand::U32(v) => (1, v as f64),
+                    AnalogInputDeadBand::F32(v) => (2, v as f64),
+                };
+                w.u16(i);
+                w.u8(k);
+                w.u8(0);
+                w.u32(0);
+                w.f64(v);
+            }
+        )
     }
 
     fn handle_analog_output_status(
@@ -479,9 +508,16 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (AnalogOutputStatus, u16)>,
     ) {
-        block!(self, kind::ANALOG_OUTPUT_STATUS, info, 24, iter, |w, x, i| {
-            record::analog(w, i, x.value, x.flags.value, x.time);
-        })
+        block!(
+            self,
+            kind::ANALOG_OUTPUT_STATUS,
+            info,
+            24,
+            iter,
+            |w, x, i| {
+                record::analog(w, i, x.value, x.flags.value, x.time);
+            }
+        )
     }
 
     fn handle_analog_output_command_event(
@@ -489,22 +525,29 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (AnalogOutputCommandEvent, u16)>,
     ) {
-        block!(self, kind::ANALOG_OUTPUT_COMMAND_EVENT, info, 24, iter, |w, x, i| {
-            let (k, v) = match x.commanded_value {
-                AnalogCommandValue::I16(v) => (0u8, v as f64),
-                AnalogCommandValue::I32(v) => (1, v as f64),
-                AnalogCommandValue::F32(v) => (2, v as f64),
-                AnalogCommandValue::F64(v) => (3, v),
-            };
-            let (tk, t) = time_parts(x.time);
-            w.u16(i);
-            w.u8(x.status.as_u8());
-            w.u8(k);
-            w.u8(tk);
-            w.zeros(3);
-            w.f64(v);
-            w.u64(t);
-        })
+        block!(
+            self,
+            kind::ANALOG_OUTPUT_COMMAND_EVENT,
+            info,
+            24,
+            iter,
+            |w, x, i| {
+                let (k, v) = match x.commanded_value {
+                    AnalogCommandValue::I16(v) => (0u8, v as f64),
+                    AnalogCommandValue::I32(v) => (1, v as f64),
+                    AnalogCommandValue::F32(v) => (2, v as f64),
+                    AnalogCommandValue::F64(v) => (3, v),
+                };
+                let (tk, t) = time_parts(x.time);
+                w.u16(i);
+                w.u8(x.status.as_u8());
+                w.u8(k);
+                w.u8(tk);
+                w.zeros(3);
+                w.f64(v);
+                w.u64(t);
+            }
+        )
     }
 
     fn handle_binary_output_command_event(
@@ -512,15 +555,22 @@ impl ReadHandler for MeasurementHandler {
         info: HeaderInfo,
         iter: &mut dyn Iterator<Item = (BinaryOutputCommandEvent, u16)>,
     ) {
-        block!(self, kind::BINARY_OUTPUT_COMMAND_EVENT, info, 16, iter, |w, x, i| {
-            let (tk, t) = time_parts(x.time);
-            w.u16(i);
-            w.u8(x.commanded_state as u8);
-            w.u8(x.status.as_u8());
-            w.u8(tk);
-            w.zeros(3);
-            w.u64(t);
-        })
+        block!(
+            self,
+            kind::BINARY_OUTPUT_COMMAND_EVENT,
+            info,
+            16,
+            iter,
+            |w, x, i| {
+                let (tk, t) = time_parts(x.time);
+                w.u16(i);
+                w.u8(x.commanded_state as u8);
+                w.u8(x.status.as_u8());
+                w.u8(tk);
+                w.zeros(3);
+                w.u64(t);
+            }
+        )
     }
 
     fn handle_unsigned_integer(

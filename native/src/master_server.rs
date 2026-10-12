@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dnp3::master::MasterChannel;
-use dnp3::tcp::{AcceptAction, AcceptConfig, ConnectionHandler, LinkIdConfig, Reject, ServerHandle};
+use dnp3::tcp::{
+    AcceptAction, AcceptConfig, ConnectionHandler, LinkIdConfig, Reject, ServerHandle,
+};
 
 use crate::codec::Writer;
 use crate::config::{self, AcceptActionDto, AcceptConfigDto, MasterServerDto};
@@ -77,7 +79,10 @@ impl Handler {
 }
 
 impl ConnectionHandler for Handler {
-    fn accept(&mut self, addr: SocketAddr) -> impl Future<Output = std::result::Result<AcceptAction, Reject>> + Send {
+    fn accept(
+        &mut self,
+        addr: SocketAddr,
+    ) -> impl Future<Output = std::result::Result<AcceptAction, Reject>> + Send {
         let (port, id, timeout) = (self.port, self.id, self.timeout);
         async move {
             let reply = request_async(
@@ -96,9 +101,9 @@ impl ConnectionHandler for Handler {
             match config::parse::<AcceptActionDto>(text) {
                 Ok(AcceptActionDto::Reject) => Err(Reject),
                 Ok(AcceptActionDto::GetLinkIdentity) => Ok(AcceptAction::GetLinkIdentity),
-                Ok(AcceptActionDto::Accept { config }) => {
-                    accept_config(config).map(AcceptAction::Accept).ok_or(Reject)
-                }
+                Ok(AcceptActionDto::Accept { config }) => accept_config(config)
+                    .map(AcceptAction::Accept)
+                    .ok_or(Reject),
                 Err(e) => {
                     tracing::warn!("invalid accept action from Dart: {}", e.message);
                     Err(Reject)
@@ -107,7 +112,11 @@ impl ConnectionHandler for Handler {
         }
     }
 
-    fn start(&mut self, channel: MasterChannel, addr: SocketAddr) -> impl Future<Output = ()> + Send {
+    fn start(
+        &mut self,
+        channel: MasterChannel,
+        addr: SocketAddr,
+    ) -> impl Future<Output = ()> + Send {
         let channel_id = self.register(channel);
         let (port, id, timeout) = (self.port, self.id, self.timeout);
         async move {
@@ -163,7 +172,13 @@ impl ConnectionHandler for Handler {
                 port,
                 msg::MASTER_SERVER_REQUEST,
                 id,
-                encode(request::START_WITH_LINK_ID, source, destination, channel_id, addr),
+                encode(
+                    request::START_WITH_LINK_ID,
+                    source,
+                    destination,
+                    channel_id,
+                    addr,
+                ),
                 timeout,
             )
             .await;
@@ -191,7 +206,10 @@ pub fn create(json: &str, events: DartPort, c: Completion) -> Result<i64> {
     };
     spawn_op(c, async move {
         let handle = dnp3::tcp::spawn_master_tcp_server(local, link_id, handler).await?;
-        let addr = handle.local_addr().map(|x| x.to_string()).unwrap_or_default();
+        let addr = handle
+            .local_addr()
+            .map(|x| x.to_string())
+            .unwrap_or_default();
         SERVERS.insert_with_id(
             id,
             Arc::new(MasterServerEntry {
@@ -204,7 +222,9 @@ pub fn create(json: &str, events: DartPort, c: Completion) -> Result<i64> {
 }
 
 pub fn destroy(id: u64) -> Result<i64> {
-    let entry = SERVERS.remove(id).ok_or_else(|| Error::invalid_handle(id))?;
+    let entry = SERVERS
+        .remove(id)
+        .ok_or_else(|| Error::invalid_handle(id))?;
     let channels = std::mem::take(&mut *entry.channels.lock().unwrap());
     for ch in channels {
         let _ = crate::master::destroy(ch);

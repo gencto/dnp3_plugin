@@ -76,7 +76,13 @@ impl Listener<dnp3::outstation::ConnectionState> for ConnectionStateListener {
             dnp3::outstation::ConnectionState::Disconnected => 0,
             dnp3::outstation::ConnectionState::Connected => 1,
         };
-        post(self.port, msg::CONNECTION_STATE, self.id, code, Payload::Null);
+        post(
+            self.port,
+            msg::CONNECTION_STATE,
+            self.id,
+            code,
+            Payload::Null,
+        );
         MaybeAsync::ready(())
     }
 }
@@ -106,12 +112,20 @@ pub struct DartConnectHandler {
     max_delay: Duration,
     last_delay: Option<Duration>,
     reconnect_delay: Duration,
+    /// attempt in progress (`connecting` seen, no outcome yet). The library only reports
+    /// `connect_failed` for timeouts, so refused connections / TLS failures are detected
+    /// when the next attempt starts.
+    pending: Option<(SocketAddr, Option<String>)>,
     port: DartPort,
     id: i64,
 }
 
 impl DartConnectHandler {
-    pub fn create(dto: &ClientDto, port: DartPort, id: i64) -> Result<Box<dyn ClientConnectionHandler>> {
+    pub fn create(
+        dto: &ClientDto,
+        port: DartPort,
+        id: i64,
+    ) -> Result<Box<dyn ClientConnectionHandler>> {
         if dto.endpoints.is_empty() {
             return Err(Error::config("at least one endpoint is required"));
         }
@@ -127,13 +141,17 @@ impl DartConnectHandler {
             endpoints: dto.endpoints.iter().cloned().map(Endpoint::from).collect(),
             names: dto.endpoints.clone(),
             next: 0,
-            timeout: dto.connect_options.connect_timeout_ms.map(Duration::from_millis),
+            timeout: dto
+                .connect_options
+                .connect_timeout_ms
+                .map(Duration::from_millis),
             local,
             master_address,
             min_delay: Duration::from_millis(dto.connect_strategy.min_connect_delay_ms),
             max_delay: Duration::from_millis(dto.connect_strategy.max_connect_delay_ms),
             last_delay: None,
             reconnect_delay: Duration::from_millis(dto.connect_strategy.reconnect_delay_ms),
+            pending: None,
             port,
             id,
         }))
@@ -149,7 +167,13 @@ impl DartConnectHandler {
             (None, Some(h)) => format!("|{h}"),
             (None, None) => "|".to_string(),
         };
-        post(self.port, msg::CONNECTION_EVENT, self.id, kind, Payload::Str(text));
+        post(
+            self.port,
+            msg::CONNECTION_EVENT,
+            self.id,
+            kind,
+            Payload::Str(text),
+        );
     }
 }
 
@@ -164,11 +188,17 @@ impl ClientConnectionHandler for DartConnectHandler {
     }
 
     fn next(&mut self) -> std::result::Result<ConnectionInfo, Duration> {
+        if let Some((addr, host)) = self.pending.take() {
+            self.event(conn_event::CONNECT_FAILED, Some(addr), host.as_deref());
+        }
         match self.endpoints.get(self.next) {
             None => {
                 self.next = 0;
                 let delay = match self.last_delay {
-                    Some(x) => x.checked_mul(2).unwrap_or(self.max_delay).min(self.max_delay),
+                    Some(x) => x
+                        .checked_mul(2)
+                        .unwrap_or(self.max_delay)
+                        .min(self.max_delay),
                     None => self.min_delay,
                 };
                 self.last_delay = Some(delay);
@@ -192,14 +222,20 @@ impl ClientConnectionHandler for DartConnectHandler {
     }
 
     fn connecting(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        if let Some((a, h)) = self.pending.take() {
+            self.event(conn_event::CONNECT_FAILED, Some(a), h.as_deref());
+        }
+        self.pending = Some((addr, hostname.map(str::to_string)));
         self.event(conn_event::CONNECTING, Some(addr), hostname);
     }
 
     fn connect_failed(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        self.pending = None;
         self.event(conn_event::CONNECT_FAILED, Some(addr), hostname);
     }
 
     fn connected(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        self.pending = None;
         self.next = 0;
         self.last_delay = None;
         self.event(conn_event::CONNECTED, Some(addr), hostname);

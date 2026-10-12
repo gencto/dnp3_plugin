@@ -229,8 +229,9 @@ final class AssociationConfig {
   });
 
   /// No startup tasks (no unsolicited enable/disable, no integrity scan)
-  const AssociationConfig.quiet()
+  const AssociationConfig.quiet({Duration responseTimeout = const Duration(seconds: 5)})
     : this(
+        responseTimeout: responseTimeout,
         disableUnsolClasses: const EventClasses.none(),
         enableUnsolClasses: const EventClasses.none(),
         startupIntegrityClasses: const Classes.none(),

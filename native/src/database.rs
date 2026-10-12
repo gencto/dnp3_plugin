@@ -68,7 +68,15 @@ fn bad_var(t: &str, v: u8) -> Error {
     Error::arg(format!("invalid {t} variation {v}"))
 }
 
-fn add_point(db: &mut Database, ty: u8, index: u16, class: Option<EventClass>, s: u8, e: u8, deadband: f64) -> Result<bool> {
+fn add_point(
+    db: &mut Database,
+    ty: u8,
+    index: u16,
+    class: Option<EventClass>,
+    s: u8,
+    e: u8,
+    deadband: f64,
+) -> Result<bool> {
     Ok(match ty {
         kind::BINARY_INPUT => {
             let s = match s {
@@ -145,7 +153,11 @@ fn add_point(db: &mut Database, ty: u8, index: u16, class: Option<EventClass>, s
                 6 => EventFrozenCounterVariation::Group23Var6,
                 x => return Err(bad_var("g23", x)),
             };
-            db.add(index, class, FrozenCounterConfig::new(s, e, deadband as u32))
+            db.add(
+                index,
+                class,
+                FrozenCounterConfig::new(s, e, deadband as u32),
+            )
         }
         kind::ANALOG_INPUT => {
             let s = match s {
@@ -192,7 +204,11 @@ fn add_point(db: &mut Database, ty: u8, index: u16, class: Option<EventClass>, s
             db.add(index, class, AnalogOutputStatusConfig::new(s, e, deadband))
         }
         kind::OCTET_STRING => db.add(index, class, OctetStringConfig),
-        x => return Err(Error::arg(format!("point type {x} cannot be added to the database"))),
+        x => {
+            return Err(Error::arg(format!(
+                "point type {x} cannot be added to the database"
+            )))
+        }
     })
 }
 
@@ -211,10 +227,26 @@ fn remove_point(db: &mut Database, ty: u8, index: u16) -> Result<bool> {
 }
 
 #[inline]
-fn update_point(db: &mut Database, ty: u8, index: u16, flags: u8, time: Option<Time>, value: u64, opts: UpdateOptions) -> Result<UpdateInfo> {
+fn update_point(
+    db: &mut Database,
+    ty: u8,
+    index: u16,
+    flags: u8,
+    time: Option<Time>,
+    value: u64,
+    opts: UpdateOptions,
+) -> Result<UpdateInfo> {
     let flags = Flags::new(flags);
     Ok(match ty {
-        kind::BINARY_INPUT => db.update2(index, &BinaryInput { value: value != 0, flags, time }, opts),
+        kind::BINARY_INPUT => db.update2(
+            index,
+            &BinaryInput {
+                value: value != 0,
+                flags,
+                time,
+            },
+            opts,
+        ),
         kind::DOUBLE_BIT_BINARY_INPUT => db.update2(
             index,
             &DoubleBitBinaryInput {
@@ -224,10 +256,42 @@ fn update_point(db: &mut Database, ty: u8, index: u16, flags: u8, time: Option<T
             },
             opts,
         ),
-        kind::BINARY_OUTPUT_STATUS => db.update2(index, &BinaryOutputStatus { value: value != 0, flags, time }, opts),
-        kind::COUNTER => db.update2(index, &Counter { value: value as u32, flags, time }, opts),
-        kind::FROZEN_COUNTER => db.update2(index, &FrozenCounter { value: value as u32, flags, time }, opts),
-        kind::ANALOG_INPUT => db.update2(index, &AnalogInput { value: f64::from_bits(value), flags, time }, opts),
+        kind::BINARY_OUTPUT_STATUS => db.update2(
+            index,
+            &BinaryOutputStatus {
+                value: value != 0,
+                flags,
+                time,
+            },
+            opts,
+        ),
+        kind::COUNTER => db.update2(
+            index,
+            &Counter {
+                value: value as u32,
+                flags,
+                time,
+            },
+            opts,
+        ),
+        kind::FROZEN_COUNTER => db.update2(
+            index,
+            &FrozenCounter {
+                value: value as u32,
+                flags,
+                time,
+            },
+            opts,
+        ),
+        kind::ANALOG_INPUT => db.update2(
+            index,
+            &AnalogInput {
+                value: f64::from_bits(value),
+                flags,
+                time,
+            },
+            opts,
+        ),
         kind::ANALOG_OUTPUT_STATUS => db.update2(
             index,
             &AnalogOutputStatus {
@@ -250,7 +314,11 @@ fn flags_type(ty: u8) -> Result<UpdateFlagsType> {
         kind::FROZEN_COUNTER => UpdateFlagsType::FrozenCounter,
         kind::ANALOG_INPUT => UpdateFlagsType::AnalogInput,
         kind::ANALOG_OUTPUT_STATUS => UpdateFlagsType::AnalogOutputStatus,
-        x => return Err(Error::arg(format!("invalid point type {x} for flags update"))),
+        x => {
+            return Err(Error::arg(format!(
+                "invalid point type {x} for flags update"
+            )))
+        }
     })
 }
 
@@ -284,7 +352,12 @@ pub struct PointIndex {
 }
 
 /// Apply all ops in `data` to the database. Returns the number of ops executed.
-pub fn apply(db: &mut Database, data: &[u8], mut out: Option<&mut [u8]>, index: Option<&mut PointIndex>) -> Result<i64> {
+pub fn apply(
+    db: &mut Database,
+    data: &[u8],
+    mut out: Option<&mut [u8]>,
+    index: Option<&mut PointIndex>,
+) -> Result<i64> {
     let mut r = Reader::new(data);
     let mut n = 0usize;
     let mut index = index;
@@ -314,7 +387,15 @@ pub fn apply(db: &mut Database, data: &[u8], mut out: Option<&mut [u8]>, index: 
                 let opts = r.u8()?;
                 let value = r.u64()?;
                 let time = r.u64()?;
-                let info = update_point(db, ty, idx, flags, time_from_parts(tk, time), value, options(event_mode, opts))?;
+                let info = update_point(
+                    db,
+                    ty,
+                    idx,
+                    flags,
+                    time_from_parts(tk, time),
+                    value,
+                    options(event_mode, opts),
+                )?;
                 info_result(&mut out, n, info);
             }
             op::ADD => {
@@ -378,8 +459,18 @@ pub fn apply(db: &mut Database, data: &[u8], mut out: Option<&mut [u8]>, index: 
                 }
             }
             op::DISCARD_UNSELECTED => {
-                let c = db.discard_unselected_events(EventClasses::new(ty & 2 != 0, ty & 4 != 0, ty & 8 != 0));
-                write_result(&mut out, n, 1, (c.num_class_1 + c.num_class_2 + c.num_class_3) as u64, 0);
+                let c = db.discard_unselected_events(EventClasses::new(
+                    ty & 2 != 0,
+                    ty & 4 != 0,
+                    ty & 8 != 0,
+                ));
+                write_result(
+                    &mut out,
+                    n,
+                    1,
+                    (c.num_class_1 + c.num_class_2 + c.num_class_3) as u64,
+                    0,
+                );
             }
             x => return Err(Error::arg(format!("unknown database op {x}"))),
         }
@@ -415,7 +506,12 @@ pub fn get(db: &Database, ty: u8, index: u16, w: &mut Writer) -> Result<bool> {
 }
 
 /// Copy counters into frozen counters (optionally clearing the counters)
-pub fn freeze_counters(db: &mut Database, indices: impl Iterator<Item = u16>, clear: bool, now: Timestamp) {
+pub fn freeze_counters(
+    db: &mut Database,
+    indices: impl Iterator<Item = u16>,
+    clear: bool,
+    now: Timestamp,
+) {
     for idx in indices {
         if let Some(c) = Get::<Counter>::get(db, idx) {
             let frozen = FrozenCounter {

@@ -80,7 +80,10 @@ pub extern "C" fn dnp3_init(post_cobject: *mut c_void) -> i64 {
 pub extern "C" fn dnp3_runtime_start(worker_threads: u32) -> i64 {
     run(|| {
         if !dart::is_initialized() {
-            return Err(Error::new(err::NOT_INITIALIZED, "dnp3_init has not been called"));
+            return Err(Error::new(
+                err::NOT_INITIALIZED,
+                "dnp3_init has not been called",
+            ));
         }
         start_runtime(worker_threads)
     })
@@ -197,7 +200,13 @@ pub extern "C" fn dnp3_master_enable(id: u64, enable: u8, port: i64, request: i6
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_master_set_decode_level(id: u64, json: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_master_set_decode_level(
+    id: u64,
+    json: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::set_decode_level(id, str_arg(json, len)?, c(port, request)))
 }
 
@@ -229,17 +238,35 @@ pub extern "C" fn dnp3_association_set_time_offset(id: u64, offset_ms: i64) -> i
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_association_read(id: u64, req: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_association_read(
+    id: u64,
+    req: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::read(id, bytes_arg(req, len)?, c(port, request)))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_association_read_with_handler(id: u64, req: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_association_read_with_handler(
+    id: u64,
+    req: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::read_with_handler(id, bytes_arg(req, len)?, c(port, request)))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_association_operate(id: u64, req: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_association_operate(
+    id: u64,
+    req: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::operate(id, bytes_arg(req, len)?, c(port, request)))
 }
 
@@ -252,7 +279,9 @@ pub unsafe extern "C" fn dnp3_association_send_and_expect_empty_response(
     port: i64,
     request: i64,
 ) -> i64 {
-    run(|| master::send_and_expect_empty_response(id, function, bytes_arg(req, len)?, c(port, request)))
+    run(|| {
+        master::send_and_expect_empty_response(id, function, bytes_arg(req, len)?, c(port, request))
+    })
 }
 
 #[no_mangle]
@@ -261,12 +290,23 @@ pub extern "C" fn dnp3_association_restart(id: u64, cold: u8, port: i64, request
 }
 
 #[no_mangle]
-pub extern "C" fn dnp3_association_synchronize_time(id: u64, procedure: u8, port: i64, request: i64) -> i64 {
+pub extern "C" fn dnp3_association_synchronize_time(
+    id: u64,
+    procedure: u8,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::synchronize_time(id, procedure, c(port, request)))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_association_write_dead_bands(id: u64, req: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_association_write_dead_bands(
+    id: u64,
+    req: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::write_dead_bands(id, bytes_arg(req, len)?, c(port, request)))
 }
 
@@ -358,12 +398,23 @@ pub unsafe extern "C" fn dnp3_association_write_file_block(
 }
 
 #[no_mangle]
-pub extern "C" fn dnp3_association_close_file(id: u64, handle: u32, port: i64, request: i64) -> i64 {
+pub extern "C" fn dnp3_association_close_file(
+    id: u64,
+    handle: u32,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::close_file(id, handle, c(port, request)))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_association_get_file_info(id: u64, path: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_association_get_file_info(
+    id: u64,
+    path: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master::get_file_info(id, str_arg(path, len)?, c(port, request)))
 }
 
@@ -430,7 +481,13 @@ pub extern "C" fn dnp3_file_read_abort(id: u64) -> i64 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_master_server_create(json: *const u8, len: usize, events: i64, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_master_server_create(
+    json: *const u8,
+    len: usize,
+    events: i64,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| master_server::create(str_arg(json, len)?, events, c(port, request)))
 }
 
@@ -465,7 +522,13 @@ pub extern "C" fn dnp3_outstation_enable(id: u64, enable: u8, port: i64, request
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_outstation_set_decode_level(id: u64, json: *const u8, len: usize, port: i64, request: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_outstation_set_decode_level(
+    id: u64,
+    json: *const u8,
+    len: usize,
+    port: i64,
+    request: i64,
+) -> i64 {
     run(|| outstation::set_decode_level(id, str_arg(json, len)?, c(port, request)))
 }
 
@@ -501,12 +564,23 @@ pub unsafe extern "C" fn dnp3_outstation_transaction(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_outstation_get(id: u64, point_type: u8, index: u16, out: *mut u8, cap: usize) -> i64 {
+pub unsafe extern "C" fn dnp3_outstation_get(
+    id: u64,
+    point_type: u8,
+    index: u16,
+    out: *mut u8,
+    cap: usize,
+) -> i64 {
     run(|| {
         if out.is_null() {
             return Err(Error::arg("null output buffer"));
         }
-        outstation::get_point(id, point_type, index, std::slice::from_raw_parts_mut(out, cap))
+        outstation::get_point(
+            id,
+            point_type,
+            index,
+            std::slice::from_raw_parts_mut(out, cap),
+        )
     })
 }
 
@@ -520,7 +594,9 @@ pub unsafe extern "C" fn dnp3_outstation_get_range(
     stop: u16,
     out_len: *mut usize,
 ) -> *mut u8 {
-    match std::panic::catch_unwind(AssertUnwindSafe(|| outstation::get_range(id, point_type, start, stop))) {
+    match std::panic::catch_unwind(AssertUnwindSafe(|| {
+        outstation::get_range(id, point_type, start, stop)
+    })) {
         Ok(Ok(data)) => into_raw_buffer(data, out_len),
         Ok(Err(e)) => {
             set_last_error(&e);
@@ -539,7 +615,12 @@ pub unsafe extern "C" fn dnp3_outstation_server_create(json: *const u8, len: usi
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn dnp3_outstation_server_add_outstation(id: u64, json: *const u8, len: usize, events: i64) -> i64 {
+pub unsafe extern "C" fn dnp3_outstation_server_add_outstation(
+    id: u64,
+    json: *const u8,
+    len: usize,
+    events: i64,
+) -> i64 {
     run(|| outstation::server_add_outstation(id, str_arg(json, len)?, events))
 }
 
@@ -580,7 +661,8 @@ pub extern "C" fn dnp3_bench_emit(port: i64, fragments: u32, points: u32, reques
                 iin: Iin::default(),
             };
             let info = bench_header_info();
-            let mut handler = measurement::MeasurementHandler::new(measurement::Sink::Port { port, id: 0 });
+            let mut handler =
+                measurement::MeasurementHandler::new(measurement::Sink::Port { port, id: 0 });
             let start = std::time::Instant::now();
             for f in 0..fragments {
                 let _ = handler.begin_fragment(ReadType::PeriodicPoll, header);

@@ -163,7 +163,13 @@ struct DartControlHandler {
 }
 
 impl DartControlHandler {
-    fn handle(&mut self, cmd: Cmd, index: u16, op: Option<OperateType>, db: &mut DatabaseHandle) -> CommandStatus {
+    fn handle(
+        &mut self,
+        cmd: Cmd,
+        index: u16,
+        op: Option<OperateType>,
+        db: &mut DatabaseHandle,
+    ) -> CommandStatus {
         let phase = if op.is_some() { 1 } else { 0 };
         let op_code = op.map(op_type_code).unwrap_or(255);
         match self.cfg.mode {
@@ -203,7 +209,10 @@ impl DartControlHandler {
                                 dbops::apply(db, &reply.data, None, Some(&mut points))
                             });
                             if let Err(e) = res {
-                                tracing::warn!("invalid database ops in control reply: {}", e.message);
+                                tracing::warn!(
+                                    "invalid database ops in control reply: {}",
+                                    e.message
+                                );
                             }
                         }
                         CommandStatus::from(reply.status as u8)
@@ -267,7 +276,12 @@ impl DartControlHandler {
 macro_rules! control_support {
     ($t:ty, $variant:ident) => {
         impl ControlSupport<$t> for DartControlHandler {
-            fn select(&mut self, control: $t, index: u16, database: &mut DatabaseHandle) -> CommandStatus {
+            fn select(
+                &mut self,
+                control: $t,
+                index: u16,
+                database: &mut DatabaseHandle,
+            ) -> CommandStatus {
                 self.handle(Cmd::$variant(control), index, None, database)
             }
 
@@ -315,7 +329,13 @@ impl DartApplication {
     }
 
     fn ask(&self, payload: Vec<u8>) -> Option<Reply> {
-        request_sync(self.port, msg::APPLICATION_REQUEST, self.id, payload, self.timeout())
+        request_sync(
+            self.port,
+            msg::APPLICATION_REQUEST,
+            self.id,
+            payload,
+            self.timeout(),
+        )
     }
 
     fn restart(&mut self, cold: bool) -> Option<RestartDelay> {
@@ -441,7 +461,8 @@ impl OutstationApplication for DartApplication {
                 if ft == 2 {
                     return Err(RequestError::NotSupported);
                 }
-                let now = Timestamp::try_from_system_time(SystemTime::now()).unwrap_or(Timestamp::zero());
+                let now =
+                    Timestamp::try_from_system_time(SystemTime::now()).unwrap_or(Timestamp::zero());
                 let shared = self.shared.clone();
                 database.transaction(|db| {
                     let points = shared.points.lock().unwrap();
@@ -512,7 +533,8 @@ impl OutstationApplication for DartApplication {
                 let mut payload = vec![app_request::WRITE_ATTRIBUTE, 0, 0, 0, 0, 0, 0, 0];
                 payload.extend_from_slice(&encoded);
                 MaybeAsync::asynchronous(async move {
-                    match request_async(port, msg::APPLICATION_REQUEST, id, payload, timeout).await {
+                    match request_async(port, msg::APPLICATION_REQUEST, id, payload, timeout).await
+                    {
                         Some(reply) => reply.status == 1,
                         None => false,
                     }
@@ -574,7 +596,13 @@ struct DartInformation {
 impl DartInformation {
     fn send(&self, ev: i64, value: i64) {
         if self.enabled {
-            post(self.port, msg::OUTSTATION_INFO, self.id, ev, Payload::Int(value));
+            post(
+                self.port,
+                msg::OUTSTATION_INFO,
+                self.id,
+                ev,
+                Payload::Int(value),
+            );
         }
     }
 }
@@ -739,7 +767,9 @@ pub fn create(json: &str, events: DartPort) -> Result<i64> {
             path,
             settings,
             retry,
-        } => create_serial(id, events, config, &path, settings, retry, app, info, control)?,
+        } => create_serial(
+            id, events, config, &path, settings, retry, app, info, control,
+        )?,
         OutstationTransportDto::Udp {
             local_endpoint,
             remote_endpoint,
@@ -794,8 +824,10 @@ fn create_serial(
                 }),
             )
         }),
-        None => enter(|| dnp3::serial::spawn_outstation_serial(path, settings, config, app, info, control))?
-            .map_err(Error::from),
+        None => enter(|| {
+            dnp3::serial::spawn_outstation_serial(path, settings, config, app, info, control)
+        })?
+        .map_err(Error::from),
     }
 }
 
@@ -812,7 +844,10 @@ fn create_serial(
     _info: Box<dyn OutstationInformation>,
     _control: Box<dyn ControlHandler>,
 ) -> Result<OutstationHandle> {
-    Err(Error::new(err::NOT_SUPPORTED, "serial ports are not supported on this platform"))
+    Err(Error::new(
+        err::NOT_SUPPORTED,
+        "serial ports are not supported on this platform",
+    ))
 }
 
 pub fn destroy(id: u64) -> Result<i64> {
@@ -841,12 +876,16 @@ pub fn set_decode_level(id: u64, json: &str, c: Completion) -> Result<i64> {
 }
 
 pub fn set_application_iin(id: u64, bits: u8) -> Result<i64> {
-    OUTSTATIONS.with(id, |o| o.shared.application_iin.store(bits, Ordering::Relaxed))?;
+    OUTSTATIONS.with(id, |o| {
+        o.shared.application_iin.store(bits, Ordering::Relaxed)
+    })?;
     Ok(0)
 }
 
 pub fn set_processing_delay(id: u64, ms: u16) -> Result<i64> {
-    OUTSTATIONS.with(id, |o| o.shared.processing_delay_ms.store(ms, Ordering::Relaxed))?;
+    OUTSTATIONS.with(id, |o| {
+        o.shared.processing_delay_ms.store(ms, Ordering::Relaxed)
+    })?;
     Ok(0)
 }
 
@@ -933,7 +972,9 @@ pub fn server_add_outstation(server: u64, json: &str, events: DartPort) -> Resul
     let entry = SERVERS.get(server)?;
     let mut state = entry.state.lock().unwrap();
     let ServerState::Building(srv) = &mut *state else {
-        return Err(Error::arg("outstations must be added before the server is bound"));
+        return Err(Error::arg(
+            "outstations must be added before the server is bound",
+        ));
     };
     let id = next_id();
     let (app, info, control, shared) = handlers(id, events, &dto.handlers);

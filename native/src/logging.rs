@@ -16,7 +16,8 @@ static PORT: AtomicI64 = AtomicI64::new(0);
 /// Log records are handed to a dedicated thread which posts them to Dart. This keeps
 /// `Dart_PostCObject` out of every FFI call (some of which are `isLeaf` calls) and keeps
 /// formatting/posting off the protocol threads.
-static SENDER: std::sync::OnceLock<Mutex<std::sync::mpsc::Sender<(u8, String)>>> = std::sync::OnceLock::new();
+static SENDER: std::sync::OnceLock<Mutex<std::sync::mpsc::Sender<(u8, String)>>> =
+    std::sync::OnceLock::new();
 
 fn sender() -> &'static Mutex<std::sync::mpsc::Sender<(u8, String)>> {
     SENDER.get_or_init(|| {
@@ -116,9 +117,8 @@ pub fn init(port: i64, level: u8, with_target: bool) -> bool {
             .with_target(with_target)
             .without_time();
         let filter = tracing_subscriber::filter::dynamic_filter_fn(|meta, _cx| enabled(meta));
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_subscriber::Layer::with_filter(layer, filter),
-        );
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_subscriber::Layer::with_filter(layer, filter));
         installed = tracing::subscriber::set_global_default(subscriber).is_ok();
     });
     tracing::callsite::rebuild_interest_cache();

@@ -81,7 +81,10 @@ impl Error {
     }
 
     pub fn invalid_handle(id: u64) -> Self {
-        Self::new(err::INVALID_HANDLE, format!("invalid or destroyed handle: {id}"))
+        Self::new(
+            err::INVALID_HANDLE,
+            format!("invalid or destroyed handle: {id}"),
+        )
     }
 
     pub fn arg(message: impl Into<String>) -> Self {
@@ -187,7 +190,13 @@ impl Completion {
     }
 
     pub fn ok(self, payload: impl Into<Payload>) {
-        post(self.port, msg::RESULT, self.request, err::OK, payload.into());
+        post(
+            self.port,
+            msg::RESULT,
+            self.request,
+            err::OK,
+            payload.into(),
+        );
     }
 
     pub fn fail(self, e: Error) {
@@ -401,7 +410,8 @@ enum Waiter {
     Async(tokio::sync::oneshot::Sender<Reply>),
 }
 
-static PENDING: LazyLock<Mutex<HashMap<u64, Waiter>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static PENDING: LazyLock<Mutex<HashMap<u64, Waiter>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Deliver a reply from Dart. Returns false if the token is unknown (e.g. timed out).
 pub fn deliver_reply(token: u64, reply: Reply) -> bool {
@@ -437,9 +447,7 @@ pub fn request_sync(
 
     let wait = || rx.recv_timeout(timeout).ok();
     let result = match tokio::runtime::Handle::try_current() {
-        Ok(handle)
-            if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread =>
-        {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
             tokio::task::block_in_place(wait)
         }
         _ => wait(),

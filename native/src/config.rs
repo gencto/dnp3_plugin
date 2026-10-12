@@ -9,7 +9,9 @@ use serde::Deserialize;
 use dnp3::app::{BufferSize, ConnectStrategy, RetryStrategy, Timeout};
 use dnp3::decode::*;
 use dnp3::link::{EndpointAddress, LinkErrorMode, LinkReadMode};
-use dnp3::master::{AssociationConfig, Classes, EventClasses, MasterChannelConfig, TimeSyncProcedure};
+use dnp3::master::{
+    AssociationConfig, Classes, EventClasses, MasterChannelConfig, TimeSyncProcedure,
+};
 use dnp3::outstation::database::{ClassZeroConfig, EventBufferConfig};
 use dnp3::outstation::{Feature, Features, OutstationConfig};
 
@@ -450,7 +452,11 @@ impl MasterChannelConfigDto {
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum MasterTransportDto {
     Tcp {
         #[serde(flatten)]
@@ -931,7 +937,11 @@ pub struct HandlersDto {
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum OutstationTransportDto {
     TcpClient {
         #[serde(flatten)]
@@ -980,7 +990,11 @@ pub struct OutstationCreateDto {
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum ServerDto {
     Tcp {
         address: String,
@@ -996,13 +1010,23 @@ pub enum ServerDto {
 }
 
 #[derive(Deserialize, Clone, Default)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum AddressFilterDto {
     #[default]
     Any,
-    Exact { address: String },
-    AnyOf { addresses: Vec<String> },
-    Wildcard { pattern: String },
+    Exact {
+        address: String,
+    },
+    AnyOf {
+        addresses: Vec<String>,
+    },
+    Wildcard {
+        pattern: String,
+    },
 }
 
 impl AddressFilterDto {
@@ -1082,7 +1106,11 @@ pub struct AcceptConfigDto {
 
 /// Reply of Dart to an `accept` request of the master server
 #[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "action")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "action"
+)]
 pub enum AcceptActionDto {
     Reject,
     GetLinkIdentity,
@@ -1114,10 +1142,8 @@ mod tests {
 
     #[test]
     fn parses_accept_action() {
-        let x: AcceptActionDto = parse(
-            r#"{"action":"accept","config":{"channel":{"masterAddress":1}}}"#,
-        )
-        .unwrap();
+        let x: AcceptActionDto =
+            parse(r#"{"action":"accept","config":{"channel":{"masterAddress":1}}}"#).unwrap();
         assert!(matches!(x, AcceptActionDto::Accept { .. }));
     }
 }

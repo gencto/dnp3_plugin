@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use dnp3::app::{PermissionSet, Permissions};
 use dnp3::app::{FunctionCode, MaybeAsync, Sequence, Timestamp};
+use dnp3::app::{PermissionSet, Permissions};
 use dnp3::master::*;
 
 use crate::codec::Writer;
@@ -142,7 +142,10 @@ fn create_serial(
     _settings: config::SerialSettingsDto,
     _retry_delay_ms: u64,
 ) -> Result<MasterChannel> {
-    Err(Error::new(err::NOT_SUPPORTED, "serial ports are not supported on this platform"))
+    Err(Error::new(
+        err::NOT_SUPPORTED,
+        "serial ports are not supported on this platform",
+    ))
 }
 
 pub fn destroy(id: u64) -> Result<i64> {
@@ -260,7 +263,13 @@ struct InfoForwarder {
 impl InfoForwarder {
     fn send(&self, event: i64, value: i64) {
         if self.enabled {
-            post(self.port, msg::ASSOCIATION_INFO, self.id, event, Payload::Int(value));
+            post(
+                self.port,
+                msg::ASSOCIATION_INFO,
+                self.id,
+                event,
+                Payload::Int(value),
+            );
         }
     }
 }
@@ -360,7 +369,9 @@ pub fn add_association(master: u64, json: &str, events: DartPort, c: Completion)
 
 pub fn remove_association(id: u64, c: Completion) -> Result<i64> {
     let entry = ASSOCIATIONS.get(id)?;
-    let _ = MASTERS.with(entry.master, |m| m.children.lock().unwrap().retain(|x| *x != id));
+    let _ = MASTERS.with(entry.master, |m| {
+        m.children.lock().unwrap().retain(|x| *x != id)
+    });
     drop_association_entry(id);
     let handle = entry.handle.clone();
     spawn_op(c, async move { handle.remove().await.map_err(Error::from) })
@@ -448,7 +459,10 @@ pub fn write_dead_bands(id: u64, req: &[u8], c: Completion) -> Result<i64> {
 
 pub fn check_link_status(id: u64, c: Completion) -> Result<i64> {
     let mut a = association(id)?;
-    spawn_op(c, async move { a.check_link_status().await.map_err(task_error) })
+    spawn_op(
+        c,
+        async move { a.check_link_status().await.map_err(task_error) },
+    )
 }
 
 // ---------------------------------------------------------------------------------------
@@ -504,7 +518,9 @@ pub fn permissions_from_u16(x: u16) -> Permissions {
 
 pub fn permissions_to_u16(p: &Permissions) -> u16 {
     let set = |s: &PermissionSet, shift: u16| -> u16 {
-        ((s.execute as u16) << shift) | ((s.write as u16) << (shift + 1)) | ((s.read as u16) << (shift + 2))
+        ((s.execute as u16) << shift)
+            | ((s.write as u16) << (shift + 1))
+            | ((s.read as u16) << (shift + 2))
     };
     set(&p.world, 0) | set(&p.group, 3) | set(&p.owner, 6)
 }
@@ -591,7 +607,13 @@ pub fn open_file(
     })
 }
 
-pub fn write_file_block(id: u64, handle: u32, block: u32, data: &[u8], c: Completion) -> Result<i64> {
+pub fn write_file_block(
+    id: u64,
+    handle: u32,
+    block: u32,
+    data: &[u8],
+    c: Completion,
+) -> Result<i64> {
     let mut a = association(id)?;
     let data = data.to_vec();
     spawn_op(c, async move {
@@ -680,7 +702,13 @@ impl DartFileReader {
 
 impl FileReader for DartFileReader {
     fn opened(&mut self, size: u32) -> FileAction {
-        post(self.port, msg::FILE_READ, self.id, file_event::OPENED, Payload::Int(size as i64));
+        post(
+            self.port,
+            msg::FILE_READ,
+            self.id,
+            file_event::OPENED,
+            Payload::Int(size as i64),
+        );
         self.action()
     }
 
@@ -690,7 +718,13 @@ impl FileReader for DartFileReader {
         buf.extend_from_slice(&block_num.to_le_bytes());
         buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
         buf.extend_from_slice(data);
-        post(self.port, msg::FILE_READ, self.id, file_event::BLOCK, Payload::Bytes(buf));
+        post(
+            self.port,
+            msg::FILE_READ,
+            self.id,
+            file_event::BLOCK,
+            Payload::Bytes(buf),
+        );
         MaybeAsync::ready(self.action())
     }
 
@@ -708,7 +742,13 @@ impl FileReader for DartFileReader {
 
     fn completed(&mut self) {
         FILE_READS.remove(self.id as u64);
-        post(self.port, msg::FILE_READ, self.id, file_event::COMPLETED, Payload::Null);
+        post(
+            self.port,
+            msg::FILE_READ,
+            self.id,
+            file_event::COMPLETED,
+            Payload::Null,
+        );
     }
 }
 
