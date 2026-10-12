@@ -121,6 +121,48 @@ void main() {
     }
   });
 
+  test('restart callbacks are reported as RestartRequested events', () async {
+    final pair = await Pair.create(
+      handlers: OutstationHandlers(
+        application: const ApplicationConfig(coldRestart: RestartMode.callback),
+        applicationCallbacks: _DelayApp(),
+      ),
+    );
+    final events = <OutstationEvent>[];
+    pair.outstation.events.listen(events.add);
+    try {
+      expect(await pair.association.coldRestart(), const Duration(seconds: 2));
+      await eventually(() => events.whereType<RestartRequested>().any((e) => e.cold));
+    } finally {
+      pair.close();
+    }
+  });
+
+  test('single commands can use one-byte indices', () async {
+    final pair = await Pair.create();
+    try {
+      await pair.association.operate(
+        CommandSet.crob(5, const Crob.latchOn(), oneByteIndex: true),
+        mode: CommandMode.directOperate,
+      );
+      expect(pair.outstation.database.getBinaryOutputStatus(5)!.value, isTrue);
+      expect(() => CommandSet.crob(300, const Crob.latchOn(), oneByteIndex: true), throwsRangeError);
+    } finally {
+      pair.close();
+    }
+  });
+
+  test('outstation operations fail after destroy', () async {
+    final pair = await Pair.create();
+    try {
+      pair.outstation.destroy();
+      expect(() => pair.outstation.enable(), throwsStateError);
+      expect(() => pair.outstation.setProcessingDelay(1), throwsStateError);
+    } finally {
+      pair.close();
+    }
+  });
+
   test('request headers validate their ranges', () {
     expect(() => ReadHeader.range(Variation.group30Var0, 5, 4), throwsRangeError);
     expect(
@@ -185,4 +227,9 @@ class _Handler extends MasterServerHandler {
 class _ThrowingApp extends OutstationApplication {
   @override
   RestartDelay? coldRestart() => throw StateError('broken');
+}
+
+class _DelayApp extends OutstationApplication {
+  @override
+  RestartDelay? coldRestart() => const RestartDelay.seconds(2);
 }

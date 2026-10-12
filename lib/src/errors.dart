@@ -174,6 +174,10 @@ final class CommandException extends Dnp3Exception {
   /// Status returned by the outstation when [error] is [CommandResponseError.badStatus]
   CommandStatus? get status =>
       error == CommandResponseError.badStatus ? CommandStatus.fromCode(subCode >> 8) : null;
+
+  /// Raw status code returned by the outstation when [error] is
+  /// [CommandResponseError.badStatus] (keeps codes that [CommandStatus] maps to `unknown`)
+  int? get statusCode => error == CommandResponseError.badStatus ? (subCode >> 8) & 0xFF : null;
 }
 
 /// Why a time synchronization failed (low byte of the [TimeSyncException] sub-code).

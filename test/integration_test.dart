@@ -268,6 +268,9 @@ void main() {
       pair.outstation.information.listen(infos.add);
       await pair.association.read(const ReadRequest.integrity());
       await eventually(() => infos.any((i) => i.type == OutstationInfoType.processRequestFromIdle));
+      final request = infos.firstWhere((i) => i.type == OutstationInfoType.processRequestFromIdle);
+      expect(request.functionCode, FunctionCode.read);
+      expect(request.requestControl & 0xC0, 0xC0, reason: 'single fragment request: FIR and FIN');
     });
 
     test('file operations against an outstation without file support fail cleanly', () async {

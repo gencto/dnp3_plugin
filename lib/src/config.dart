@@ -739,6 +739,7 @@ enum ControlMode {
 }
 
 /// How a generated event is treated when a point is updated
+// The index is the wire code (0 detect, 1 force, 2 suppress): keep the order.
 enum EventMode {
   /// create an event if the value / flags changed (respecting dead bands)
   detect,

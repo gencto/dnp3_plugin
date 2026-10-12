@@ -289,10 +289,12 @@ final class CommandSet {
   CommandSet({this.oneByteIndex = false});
 
   /// Single CROB
-  factory CommandSet.crob(int index, Crob crob) => CommandSet()..addCrob(index, crob);
+  factory CommandSet.crob(int index, Crob crob, {bool oneByteIndex = false}) =>
+      CommandSet(oneByteIndex: oneByteIndex)..addCrob(index, crob);
 
   /// Single analog output
-  factory CommandSet.analog(int index, AnalogOutput value) => CommandSet()..addAnalog(index, value);
+  factory CommandSet.analog(int index, AnalogOutput value, {bool oneByteIndex = false}) =>
+      CommandSet(oneByteIndex: oneByteIndex)..addAnalog(index, value);
 
   void _add(int type, int index, Object cmd) {
     if (oneByteIndex) _u8(index);

@@ -293,8 +293,8 @@ final class CountersFrozen extends OutstationEvent {
   String toString() => 'CountersFrozen($request)';
 }
 
-/// The master requested a restart answered natively ([RestartMode.seconds] /
-/// [RestartMode.milliseconds]); not emitted in [RestartMode.callback]
+/// The master requested a restart that the outstation accepted (any [RestartMode] that
+/// answered with a delay, including [RestartMode.callback])
 final class RestartRequested extends OutstationEvent {
   /// true for COLD_RESTART, false for WARM_RESTART
   final bool cold;
@@ -377,6 +377,22 @@ enum OutstationInfoType {
   clearRestartIin,
 }
 
+/// How an outstation handled a broadcast request
+enum BroadcastAction {
+  /// The request was processed
+  processed,
+
+  /// Broadcast requests are disabled in the outstation configuration
+  ignoredByConfiguration,
+
+  /// The object headers could not be parsed
+  badObjectHeaders,
+
+  /// The function code is not supported for broadcast (see
+  /// [OutstationInfo.unsupportedFunction])
+  unsupportedFunction,
+}
+
 /// `OutstationInformation` callbacks (enable with `information: true`)
 final class OutstationInfo {
   /// Which information callback fired
@@ -391,14 +407,34 @@ final class OutstationInfo {
   /// function code for processRequestFromIdle / broadcastReceived
   FunctionCode? get functionCode => FunctionCode.fromCode(raw & 0xFF);
 
-  /// sequence number (ecsn) for confirm related events
-  int get sequence => raw & 0xFF;
+  /// Sequence number of confirm related events: the expected sequence (ecsn), or for
+  /// [OutstationInfoType.unexpectedConfirm] the sequence of the received confirm
+  int get sequence => type == OutstationInfoType.unexpectedConfirm ? (raw >> 8) & 0xFF : raw & 0xFF;
 
-  /// second sequence number (wrongSolicitedConfirmSeq) / unexpectedConfirm seq
+  /// [OutstationInfoType.wrongSolicitedConfirmSeq]: sequence number of the received confirm
   int get otherSequence => (raw >> 8) & 0xFF;
 
-  /// unsolicitedConfirmTimeout: whether a retry follows
+  /// [OutstationInfoType.unsolicitedConfirmTimeout]: whether a retry follows
   bool get retry => (raw >> 8) & 1 != 0;
+
+  /// [OutstationInfoType.unexpectedConfirm]: whether the confirm was for an unsolicited response
+  bool get unsolicited => raw & 1 != 0;
+
+  /// [OutstationInfoType.processRequestFromIdle]: application control byte of the request
+  /// (`fir << 7 | fin << 6 | con << 5 | uns << 4 | seq`)
+  int get requestControl => (raw >> 8) & 0xFF;
+
+  /// [OutstationInfoType.broadcastReceived]: what the outstation did with the request
+  BroadcastAction? get broadcastAction {
+    if (type != OutstationInfoType.broadcastReceived) return null;
+    final a = (raw >> 8) & 0xFF;
+    return a < BroadcastAction.values.length ? BroadcastAction.values[a] : null;
+  }
+
+  /// [BroadcastAction.unsupportedFunction]: the function code that is not supported
+  FunctionCode? get unsupportedFunction => broadcastAction == BroadcastAction.unsupportedFunction
+      ? FunctionCode.fromCode((raw >> 16) & 0xFF)
+      : null;
 
   @override
   String toString() => 'OutstationInfo($type, 0x${raw.toRadixString(16)})';
@@ -721,13 +757,20 @@ final class Outstation with ClientEvents {
 
   /// Enables the outstation. TCP/TLS client outstations are created disabled and connect only
   /// once enabled; serial, UDP and server outstations start enabled.
-  Future<void> enable() => _rt.call((p, r) => dnp3_outstation_enable(handle, 1, p, r));
+  Future<void> enable() {
+    _checkAlive();
+    return _rt.call((p, r) => dnp3_outstation_enable(handle, 1, p, r));
+  }
 
   /// Disables the outstation, closing its connection.
-  Future<void> disable() => _rt.call((p, r) => dnp3_outstation_enable(handle, 0, p, r));
+  Future<void> disable() {
+    _checkAlive();
+    return _rt.call((p, r) => dnp3_outstation_enable(handle, 0, p, r));
+  }
 
   /// Changes how much protocol traffic the outstation logs.
   Future<void> setDecodeLevel(DecodeLevel level) {
+    _checkAlive();
     final json = utf8Bytes(toJson(level.toJson()));
     return _rt.call((p, r) => dnp3_outstation_set_decode_level(handle, json.address, json.length, p, r));
   }
@@ -739,18 +782,26 @@ final class Outstation with ClientEvents {
     bool deviceTrouble = false,
     bool configCorrupt = false,
   }) {
+    _checkAlive();
     final bits =
         (needTime ? 1 : 0) | (localControl ? 2 : 0) | (deviceTrouble ? 4 : 0) | (configCorrupt ? 8 : 0);
     check(dnp3_outstation_set_application_iin(handle, bits));
   }
 
   /// Processing delay reported in non-LAN time synchronization (g52v2)
-  void setProcessingDelay(int milliseconds) => check(
-    dnp3_outstation_set_processing_delay(
-      handle,
-      RangeError.checkValueInInterval(milliseconds, 0, 0xFFFF, 'milliseconds'),
-    ),
-  );
+  void setProcessingDelay(int milliseconds) {
+    _checkAlive();
+    check(
+      dnp3_outstation_set_processing_delay(
+        handle,
+        RangeError.checkValueInInterval(milliseconds, 0, 0xFFFF, 'milliseconds'),
+      ),
+    );
+  }
+
+  void _checkAlive() {
+    if (_destroyed) throw StateError('Outstation has been destroyed');
+  }
 
   /// Shut down the outstation (client / serial / UDP outstations stop immediately;
   /// server outstations stop when their server is destroyed)

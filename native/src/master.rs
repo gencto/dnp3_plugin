@@ -71,7 +71,8 @@ impl TimeSource {
 
 pub static MASTERS: Registry<Arc<MasterEntry>> = Registry::new();
 pub static ASSOCIATIONS: Registry<Arc<AssociationEntry>> = Registry::new();
-pub static POLLS: Registry<PollHandle> = Registry::new();
+/// Periodic polls with the id of their association
+pub static POLLS: Registry<(u64, PollHandle)> = Registry::new();
 static FILE_READS: Registry<Arc<AtomicBool>> = Registry::new();
 
 pub fn clear() {
@@ -564,7 +565,7 @@ pub fn add_poll(id: u64, req: &[u8], period_ms: u64, c: Completion) -> Result<i6
             .add_poll(request, Duration::from_millis(period_ms))
             .await
             .map_err(poll_error)?;
-        let poll_id = POLLS.insert(poll);
+        let poll_id = POLLS.insert((id, poll));
         if ASSOCIATIONS
             .with(id, |a| a.polls.lock().unwrap().push(poll_id))
             .is_err()
@@ -577,12 +578,15 @@ pub fn add_poll(id: u64, req: &[u8], period_ms: u64, c: Completion) -> Result<i6
 }
 
 pub fn demand_poll(id: u64, c: Completion) -> Result<i64> {
-    let mut poll = POLLS.get(id)?;
+    let (_, mut poll) = POLLS.get(id)?;
     spawn_op(c, async move { poll.demand().await.map_err(Error::from) })
 }
 
 pub fn remove_poll(id: u64, c: Completion) -> Result<i64> {
-    let poll = POLLS.remove(id).ok_or_else(|| Error::invalid_handle(id))?;
+    let (association, poll) = POLLS.remove(id).ok_or_else(|| Error::invalid_handle(id))?;
+    let _ = ASSOCIATIONS.with(association, |a| {
+        a.polls.lock().unwrap().retain(|p| *p != id)
+    });
     spawn_op(c, async move { poll.remove().await.map_err(Error::from) })
 }
 

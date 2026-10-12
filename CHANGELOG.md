@@ -25,6 +25,15 @@
 * `Database.getRange` on a destroyed outstation throws `InvalidHandleException`.
 * `AssociationEvent.iin2` keeps the IIN2 byte of `rejectedByIin2` task failures.
 * `ReadHeader.range` and `DeadBandHeader` validate their indices and values in Dart.
+* `OutstationInfo`: `requestControl`, `broadcastAction` (new `BroadcastAction` enum),
+  `unsupportedFunction`, `unsolicited`; `sequence` of `unexpectedConfirm` events is the
+  confirm's sequence number (it returned the unsolicited flag).
+* `RestartRequested` is also emitted when a restart callback accepted the restart.
+* `Outstation.enable/disable/setDecodeLevel/setApplicationIin/setProcessingDelay` throw
+  `StateError` after `destroy()`, like `MasterChannel`.
+* `CommandSet.crob/analog(oneByteIndex:)`; `CommandException.statusCode` keeps status codes
+  that `CommandStatus` does not know.
+* Removing a poll also removes it from its association's bookkeeping.
 * Every public API member is documented; `public_member_api_docs` is enforced.
 * The native library is built only as a dynamic library; ABI version 3
   (`dnp3_association_set_time_offset` was removed, `Association.setTimeOffset` stays).
