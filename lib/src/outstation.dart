@@ -20,17 +20,36 @@ import 'types.dart';
 // control requests (callback mode)
 // ---------------------------------------------------------------------------------------
 
-enum ControlPhase { select, operate }
+/// Phase of a [ControlRequest]
+enum ControlPhase {
+  /// SELECT (first step of select-before-operate)
+  select,
+
+  /// OPERATE, DIRECT_OPERATE or DIRECT_OPERATE_NO_ACK
+  operate,
+}
 
 /// How the master requested the operation
-enum OperateType { selectBeforeOperate, directOperate, directOperateNoAck }
+enum OperateType {
+  /// OPERATE following a SELECT
+  selectBeforeOperate,
+
+  /// DIRECT_OPERATE
+  directOperate,
+
+  /// DIRECT_OPERATE_NO_ACK
+  directOperateNoAck,
+}
 
 /// A SELECT or OPERATE of one control point
 final class ControlRequest {
+  /// SELECT or OPERATE
   final ControlPhase phase;
 
   /// null for SELECT
   final OperateType? operateType;
+
+  /// Index of the controlled point
   final int index;
 
   /// [Crob] or [AnalogOutput]
@@ -39,12 +58,19 @@ final class ControlRequest {
   /// status (only meaningful for executed-control notifications)
   final CommandStatus status;
 
+  /// Creates a control request; instances normally come from the outstation.
   const ControlRequest(this.phase, this.operateType, this.index, this.command, this.status);
 
+  /// Whether [command] is a [Crob] (otherwise an [AnalogOutput])
   bool get isCrob => command is Crob;
+
+  /// [command] as a [Crob]; throws a [TypeError] for analog outputs
   Crob get crob => command as Crob;
+
+  /// [command] as an [AnalogOutput]; throws a [TypeError] for CROBs
   AnalogOutput get analog => command as AnalogOutput;
 
+  /// Decodes a native control record (internal).
   static ControlRequest decode(Uint8List data) {
     final d = ByteData.sublistView(data);
     final phase = d.getUint8(0) == 0 ? ControlPhase.select : ControlPhase.operate;
@@ -79,28 +105,48 @@ final class ControlRequest {
 /// Answer to a control request in callback mode. Database operations recorded in
 /// [database] are applied atomically by the protocol thread before the response is sent.
 final class ControlResponse {
+  /// Status returned to the master
   final CommandStatus status;
+
+  /// Operations applied atomically before the response is sent
   final DatabaseTransaction? database;
+
+  /// Answers with `status`, optionally applying `database` operations.
   const ControlResponse(this.status, [this.database]);
+
+  /// Accept the control
   static const success = ControlResponse(CommandStatus.success);
+
+  /// Reject the control with [CommandStatus.notSupported]
   static const notSupported = ControlResponse(CommandStatus.notSupported);
 }
 
+/// Handles a SELECT / OPERATE in [ControlMode.callback]. A thrown error or failed Future
+/// answers [CommandStatus.hardwareError]; no answer within [ControlHandlerConfig.timeout]
+/// answers [ControlHandlerConfig.timeoutStatus].
 typedef ControlCallback = FutureOr<ControlResponse> Function(ControlRequest request);
 
 /// Freeze request received by an outstation with [FreezeMode.callback]
 final class FreezeRequest {
   /// null = all counters
   final (int, int)? range;
+
+  /// FREEZE_AND_CLEAR: counters are reset after being frozen
   final bool clear;
 
   /// set for FREEZE_AT_TIME
   final Dnp3Time? time;
+
+  /// FREEZE_AT_TIME repetition interval in milliseconds (0 = freeze once)
   final int intervalMs;
+
+  /// Whether this is a FREEZE_AT_TIME request
   final bool atTime;
 
+  /// Creates a freeze request; instances normally come from the outstation.
   const FreezeRequest(this.range, this.clear, this.atTime, this.time, this.intervalMs);
 
+  /// Decodes a native freeze record (internal).
   static FreezeRequest decode(Uint8List data) {
     final d = ByteData.sublistView(data);
     final all = d.getUint8(1) == 0;
@@ -118,11 +164,26 @@ final class FreezeRequest {
   String toString() => 'FreezeRequest(range: $range, clear: $clear, atTime: $atTime)';
 }
 
-enum RequestResult { ok, parameterError, notSupported }
+/// Answer of an [OutstationApplication] callback
+enum RequestResult {
+  /// Request accepted
+  ok,
 
+  /// Rejected with IIN2 PARAMETER_ERROR
+  parameterError,
+
+  /// Rejected with IIN2 NO_FUNC_CODE_SUPPORT
+  notSupported,
+}
+
+/// Delay announced to the master in answer to COLD_RESTART / WARM_RESTART
 sealed class RestartDelay {
   const RestartDelay();
+
+  /// Restart takes `value` seconds (0..65535)
   const factory RestartDelay.seconds(int value) = _Seconds;
+
+  /// Restart takes `value` milliseconds (0..65535)
   const factory RestartDelay.milliseconds(int value) = _Millis;
   int get _status;
   int get _value;
@@ -148,10 +209,16 @@ final class _Millis extends RestartDelay {
 
 /// Callbacks for the application modes configured as `callback` in [ApplicationConfig]
 abstract class OutstationApplication {
+  /// Const constructor for subclasses.
   const OutstationApplication();
 
+  /// WRITE of the absolute time (g50v1) in [TimeWriteMode.callback]; not supported by default.
   FutureOr<RequestResult> writeAbsoluteTime(Dnp3Time time) => RequestResult.notSupported;
+
+  /// COLD_RESTART in [RestartMode.callback]: return the delay, or null if not supported.
   FutureOr<RestartDelay?> coldRestart() => null;
+
+  /// WARM_RESTART in [RestartMode.callback]: return the delay, or null if not supported.
   FutureOr<RestartDelay?> warmRestart() => null;
 
   /// Return the result and (optionally) database operations to apply atomically
@@ -166,48 +233,73 @@ abstract class OutstationApplication {
 // notifications
 // ---------------------------------------------------------------------------------------
 
+/// Notification published on [Outstation.events]
 sealed class OutstationEvent {
   const OutstationEvent();
 }
 
 /// A control executed in [ControlMode.accept]
 final class ControlExecuted extends OutstationEvent {
+  /// The executed OPERATE
   final ControlRequest request;
+
+  /// Wraps an executed control.
   const ControlExecuted(this.request);
   @override
   String toString() => 'ControlExecuted($request)';
 }
 
+/// The master wrote the absolute time, accepted in [TimeWriteMode.accept]
 final class TimeWritten extends OutstationEvent {
+  /// Time written by the master
   final Dnp3Time time;
+
+  /// Wraps the written time.
   const TimeWritten(this.time);
   @override
   String toString() => 'TimeWritten($time)';
 }
 
+/// The master wrote analog input dead bands (group 34)
 final class DeadBandsWritten extends OutstationEvent {
+  /// New dead band per analog input index
   final Map<int, double> deadBands;
+
+  /// Wraps the written dead bands.
   const DeadBandsWritten(this.deadBands);
   @override
   String toString() => 'DeadBandsWritten($deadBands)';
 }
 
+/// The master wrote a device attribute, accepted in [AttributeWriteMode.accept]
 final class AttributeWritten extends OutstationEvent {
+  /// The written attribute
   final DeviceAttribute attribute;
+
+  /// Wraps the written attribute.
   const AttributeWritten(this.attribute);
   @override
   String toString() => 'AttributeWritten($attribute)';
 }
 
+/// Counters were frozen natively in [FreezeMode.auto] (also on each FREEZE_AT_TIME firing)
 final class CountersFrozen extends OutstationEvent {
+  /// The freeze request that was executed
   final FreezeRequest request;
+
+  /// Wraps the executed freeze.
   const CountersFrozen(this.request);
   @override
   String toString() => 'CountersFrozen($request)';
 }
 
+/// The master requested a restart answered natively ([RestartMode.seconds] /
+/// [RestartMode.milliseconds]); not emitted in [RestartMode.callback]
 final class RestartRequested extends OutstationEvent {
+  /// true for COLD_RESTART, false for WARM_RESTART
   final bool cold;
+
+  /// Wraps the restart request.
   const RestartRequested(this.cold);
   @override
   String toString() => 'RestartRequested(cold: $cold)';
@@ -215,15 +307,23 @@ final class RestartRequested extends OutstationEvent {
 
 /// The master confirmed events (requires `notifyConfirm`)
 final class EventsConfirmed extends OutstationEvent {
+  /// IDs of the events removed from the buffer by this confirm
   final List<int> clearedEventIds;
+
+  /// Class 1 events still buffered
   final int remainingClass1;
+
+  /// Class 2 events still buffered
   final int remainingClass2;
+
+  /// Class 3 events still buffered
   final int remainingClass3;
 
   /// remaining events per type: binary, doubleBit, binaryOutputStatus, counter,
   /// frozenCounter, analog, analogOutputStatus, octetString
   final List<int> remainingByType;
 
+  /// Creates a confirm notification.
   const EventsConfirmed(
     this.clearedEventIds,
     this.remainingClass1,
@@ -238,27 +338,54 @@ final class EventsConfirmed extends OutstationEvent {
       'remaining: $remainingClass1/$remainingClass2/$remainingClass3)';
 }
 
+/// Kind of an [OutstationInfo]
 enum OutstationInfoType {
+  /// Started processing a request (see [OutstationInfo.functionCode])
   processRequestFromIdle,
+
+  /// Received a broadcast request (see [OutstationInfo.functionCode])
   broadcastReceived,
+
+  /// Waiting for the master to confirm a solicited response
   enterSolicitedConfirmWait,
+
+  /// Solicited confirm not received in time
   solicitedConfirmTimeout,
+
+  /// Solicited confirm received
   solicitedConfirmReceived,
+
+  /// A new request arrived while waiting for a solicited confirm
   solicitedConfirmWaitNewRequest,
+
+  /// Solicited confirm with the wrong sequence number
   wrongSolicitedConfirmSeq,
+
+  /// Confirm received while none was expected
   unexpectedConfirm,
+
+  /// Waiting for the master to confirm an unsolicited response
   enterUnsolicitedConfirmWait,
+
+  /// Unsolicited confirm not received in time (see [OutstationInfo.retry])
   unsolicitedConfirmTimeout,
+
+  /// Unsolicited response confirmed
   unsolicitedConfirmed,
+
+  /// The master cleared the DEVICE_RESTART IIN bit
   clearRestartIin,
 }
 
 /// `OutstationInformation` callbacks (enable with `information: true`)
 final class OutstationInfo {
+  /// Which information callback fired
   final OutstationInfoType type;
 
   /// packed value; see the accessors
   final int raw;
+
+  /// Creates an info record from its packed native value.
   const OutstationInfo(this.type, this.raw);
 
   /// function code for processRequestFromIdle / broadcastReceived
@@ -283,7 +410,10 @@ final class OutstationInfo {
 
 /// Bundle of the handler configuration passed to every outstation factory
 final class OutstationHandlers {
+  /// How SELECT / OPERATE requests are handled
   final ControlHandlerConfig control;
+
+  /// How time writes, restarts, freezes and attribute writes are handled
   final ApplicationConfig application;
 
   /// forward `OutstationInformation` callbacks to [Outstation.information]
@@ -305,6 +435,7 @@ final class OutstationHandlers {
   /// Runs asynchronously on the native side: no protocol thread is blocked while waiting.
   final FutureOr<DatabaseTransaction?> Function()? onControlFragmentEnd;
 
+  /// Creates the handler configuration.
   const OutstationHandlers({
     this.control = const ControlHandlerConfig(),
     this.application = const ApplicationConfig(),
@@ -315,6 +446,7 @@ final class OutstationHandlers {
     this.onControlFragmentEnd,
   });
 
+  /// Native configuration (the Dart callbacks themselves are not serialized).
   Map<String, Object?> toJson() => {
     'control': {
       ...control.toJson(),
@@ -332,6 +464,8 @@ final class Outstation with ClientEvents {
   final NativeRuntime _rt;
   final bool _owned;
   final OutstationHandlers? _handlers;
+
+  /// Synchronous access to the outstation's point database
   late final Database database = Database(handle);
   bool _destroyed = false;
   bool _released = false;
@@ -381,6 +515,7 @@ final class Outstation with ClientEvents {
     'masterAddress': ?masterAddress,
   }, connectionPolicy);
 
+  /// Outstation that connects to a master acting as a TLS server
   factory Outstation.tlsClient({
     required OutstationConfig config,
     required List<String> endpoints,
@@ -415,6 +550,8 @@ final class Outstation with ClientEvents {
     if (retry != null) 'retry': retry.toJson(),
   });
 
+  /// UDP outstation on `localEndpoint` answering the master at `remoteEndpoint`;
+  /// `oneToMany` answers requests from any remote address instead.
   factory Outstation.udp({
     required OutstationConfig config,
     required String localEndpoint,
@@ -577,10 +714,13 @@ final class Outstation with ClientEvents {
   /// Atomically apply database operations. See [DatabaseTransaction].
   int transaction(void Function(DatabaseTransaction tx) build) => database.transaction(build);
 
+  /// Enables the outstation; TCP/TLS client outstations start connecting once enabled.
   Future<void> enable() => _rt.call((p, r) => dnp3_outstation_enable(handle, 1, p, r));
 
+  /// Disables the outstation, closing its connection.
   Future<void> disable() => _rt.call((p, r) => dnp3_outstation_enable(handle, 0, p, r));
 
+  /// Changes how much protocol traffic the outstation logs.
   Future<void> setDecodeLevel(DecodeLevel level) {
     final json = utf8Bytes(toJson(level.toJson()));
     return _rt.call((p, r) => dnp3_outstation_set_decode_level(handle, json.address, json.length, p, r));
@@ -631,6 +771,7 @@ final class Outstation with ClientEvents {
 
 /// A TCP or TLS server hosting one or more outstations (distinguished by master IP)
 final class OutstationServer {
+  /// Opaque native handle of the server
   final int handle;
   final NativeRuntime _rt;
   final _outstations = <Outstation>[];
@@ -648,6 +789,7 @@ final class OutstationServer {
   factory OutstationServer.tcp(String address, {LinkErrorMode linkErrorMode = LinkErrorMode.close}) =>
       _create({'type': 'tcp', 'address': address, 'linkErrorMode': linkErrorMode.name});
 
+  /// TLS server listening on `address`, e.g. `0.0.0.0:20001`
   factory OutstationServer.tls(
     String address,
     TlsConfig tls, {
@@ -682,6 +824,7 @@ final class OutstationServer {
     return addr;
   }
 
+  /// Address returned by [bind]; null until the server is bound
   String? get localAddress => _localAddress;
 
   /// Stop the server and all of its outstations
