@@ -48,8 +48,9 @@ abstract final class Dnp3 {
   }
 
   /// Payloads at least this large are moved into the Dart heap without copying
-  /// (external typed data). Smaller payloads are copied, which is cheaper for tiny buffers.
-  /// Default: 256 bytes.
+  /// (external typed data); smaller payloads are copied into the young generation, which
+  /// the benchmarks show is cheaper below ~100 KB. Default: 128 KiB. Use 0 to always
+  /// transfer without copying.
   static set zeroCopyThreshold(int bytes) => dnp3_set_external_threshold(bytes);
 
   /// Disable Nagle's algorithm being turned off (TCP_NODELAY is enabled by default)

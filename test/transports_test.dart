@@ -91,27 +91,31 @@ void main() {
 
     setUpAll(() async {
       dir = await Directory.systemTemp.createTemp('dnp3_tls');
-      for (final name in ['master', 'outstation']) {
-        final r = await Process.run('openssl', [
-          'req',
-          '-x509',
-          '-newkey',
-          'ec',
-          '-pkeyopt',
-          'ec_paramgen_curve:prime256v1',
-          '-nodes',
-          '-keyout',
-          '${dir.path}/$name.key',
-          '-out',
-          '${dir.path}/$name.pem',
-          '-days',
-          '2',
-          '-subj',
-          '/CN=$name',
-          '-addext',
-          'subjectAltName=DNS:$name',
-        ]);
-        if (r.exitCode != 0) skip = true;
+      try {
+        for (final name in ['master', 'outstation']) {
+          final r = await Process.run('openssl', [
+            'req',
+            '-x509',
+            '-newkey',
+            'ec',
+            '-pkeyopt',
+            'ec_paramgen_curve:prime256v1',
+            '-nodes',
+            '-keyout',
+            '${dir.path}/$name.key',
+            '-out',
+            '${dir.path}/$name.pem',
+            '-days',
+            '2',
+            '-subj',
+            '/CN=$name',
+            '-addext',
+            'subjectAltName=DNS:$name',
+          ]);
+          if (r.exitCode != 0) skip = true;
+        }
+      } on ProcessException {
+        skip = true; // openssl not installed
       }
     });
 

@@ -6,6 +6,7 @@ analyzer:
   exclude:
     - native/**
     - build/**
+    - example/flutter_app/**
 
 linter:
   rules:

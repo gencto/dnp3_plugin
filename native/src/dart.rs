@@ -105,8 +105,11 @@ type PostCObjectFn = unsafe extern "C" fn(port: DartPort, message: *mut CObject)
 static POST_COBJECT: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Payloads smaller than this are copied (`kTypedData`) instead of being transferred as
-/// external typed data: for tiny buffers a memcpy is cheaper than a VM finalizer.
-pub(crate) static EXTERNAL_THRESHOLD: AtomicUsize = AtomicUsize::new(256);
+/// external typed data. Measured on the Dart VM (benchmark/run_all.dart, section 1): a copy
+/// into the young generation beats the finalizer + external-allocation accounting of an
+/// external typed data object up to ~100 KB; above that zero-copy wins by a wide margin
+/// (4x at 384 KB). Adjustable at runtime with `dnp3_set_external_threshold`.
+pub(crate) static EXTERNAL_THRESHOLD: AtomicUsize = AtomicUsize::new(128 * 1024);
 
 pub(crate) fn set_post_cobject(ptr: *mut c_void) {
     POST_COBJECT.store(ptr, Ordering::Release);
