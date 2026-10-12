@@ -5,3 +5,7 @@ analyzer:
     - native/**
     - build/**
     - example/flutter_app/**
+
+linter:
+  rules:
+    - public_member_api_docs
