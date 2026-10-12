@@ -1,0 +1,13 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: false
+  exclude:
+    - native/**
+    - build/**
+    - example/flutter_app/**
+
+linter:
+  rules:
+    - unawaited_futures: false

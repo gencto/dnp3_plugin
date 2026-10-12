@@ -1,0 +1,89 @@
+# Reusable workflow: compiles the Rust bridge (native/) for every supported target and
+# uploads each library as an artifact laid out as `<rust-triple>/<library file>`, which is
+# exactly the structure expected by `DNP3_PREBUILT_DIR` / `native/prebuilt/`.
+name: native-build
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: cargo profile
+        type: string
+        default: release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Android (16 KB page size aligned)
+          - { os: ubuntu-latest, target: aarch64-linux-android, lib: libdnp3_dart.so, android: true }
+          - { os: ubuntu-latest, target: armv7-linux-androideabi, lib: libdnp3_dart.so, android: true }
+          - { os: ubuntu-latest, target: x86_64-linux-android, lib: libdnp3_dart.so, android: true }
+          - { os: ubuntu-latest, target: i686-linux-android, lib: libdnp3_dart.so, android: true }
+          # Apple
+          - { os: macos-latest, target: aarch64-apple-ios, lib: libdnp3_dart.dylib }
+          - { os: macos-latest, target: aarch64-apple-ios-sim, lib: libdnp3_dart.dylib }
+          - { os: macos-latest, target: x86_64-apple-ios, lib: libdnp3_dart.dylib }
+          - { os: macos-latest, target: aarch64-apple-darwin, lib: libdnp3_dart.dylib }
+          - { os: macos-latest, target: x86_64-apple-darwin, lib: libdnp3_dart.dylib }
+          # Linux
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, lib: libdnp3_dart.so }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, lib: libdnp3_dart.so }
+          # Windows
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, lib: dnp3_dart.dll }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc, lib: dnp3_dart.dll }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          key: ${{ matrix.target }}
+
+      - name: Build (Android NDK)
+        if: matrix.android
+        working-directory: native
+        shell: bash
+        env:
+          RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk --target ${{ matrix.target }} --platform 21 build --profile ${{ inputs.profile }} --locked
+
+      - name: Build (Apple)
+        if: runner.os == 'macOS'
+        working-directory: native
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+          MACOSX_DEPLOYMENT_TARGET: "10.14"
+          RUSTFLAGS: -C link-arg=-Wl,-install_name,@rpath/libdnp3_dart.dylib
+        run: cargo build --profile ${{ inputs.profile }} --locked --target ${{ matrix.target }}
+
+      - name: Build
+        if: ${{ !matrix.android && runner.os != 'macOS' }}
+        working-directory: native
+        run: cargo build --profile ${{ inputs.profile }} --locked --target ${{ matrix.target }}
+
+      - name: Stage
+        shell: bash
+        run: |
+          mkdir -p staging/${{ matrix.target }}
+          cp native/target/${{ matrix.target }}/${{ inputs.profile }}/${{ matrix.lib }} staging/${{ matrix.target }}/
+          ls -l staging/${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: staging/
+          if-no-files-found: error

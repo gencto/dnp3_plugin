@@ -1,0 +1,90 @@
+{
+  "delivery_10_zerocopy": {
+    "fragments_per_s": 161621.38574176136,
+    "points_per_s": 1616213.8574176137,
+    "native_us": 115424
+  },
+  "delivery_10_copy": {
+    "fragments_per_s": 150301.35421520146,
+    "points_per_s": 1503013.5421520146,
+    "native_us": 130366
+  },
+  "delivery_100_zerocopy": {
+    "fragments_per_s": 97727.82799902272,
+    "points_per_s": 9772782.799902271,
+    "native_us": 20242
+  },
+  "delivery_100_copy": {
+    "fragments_per_s": 64683.05304010349,
+    "points_per_s": 6468305.304010349,
+    "native_us": 30593
+  },
+  "delivery_1000_zerocopy": {
+    "fragments_per_s": 29766.33427593392,
+    "points_per_s": 29766334.27593392,
+    "native_us": 6466
+  },
+  "delivery_1000_copy": {
+    "fragments_per_s": 36503.01149844863,
+    "points_per_s": 36503011.498448625,
+    "native_us": 5316
+  },
+  "delivery_4000_zerocopy": {
+    "fragments_per_s": 16153.7840239076,
+    "points_per_s": 64615136.0956304,
+    "native_us": 12212
+  },
+  "delivery_4000_copy": {
+    "fragments_per_s": 16277.366322129079,
+    "points_per_s": 65109465.28851631,
+    "native_us": 12072
+  },
+  "delivery_16000_zerocopy": {
+    "fragments_per_s": 7058.906575371475,
+    "points_per_s": 112942505.2059436,
+    "native_us": 27964
+  },
+  "delivery_16000_copy": {
+    "fragments_per_s": 1705.01530251234,
+    "points_per_s": 27280244.84019744,
+    "native_us": 68830
+  },
+  "delivery_1000_zerocopy_decoded_points_per_s": 47369119.12386077,
+  "decode_ns_per_point": {
+    "flyweight_value": 2.6425,
+    "visitor_value": 2.8505,
+    "flyweight_all": 7.7475,
+    "objects": 31.3625,
+    "json": 693.1395
+  },
+  "db_updates_per_s_batch_1": 9234036.659125537,
+  "db_updates_per_s_batch_10": 31504001.008128032,
+  "db_updates_per_s_batch_100": 34782608.69565217,
+  "db_updates_per_s_batch_1000": 26603881.506311774,
+  "e2e_integrity poll, 1000 analogs (g30v6), decoded": {
+    "p50_us": 536.0,
+    "p99_us": 1261.0
+  },
+  "e2e_read 10 analogs (range)": {
+    "p50_us": 92.0,
+    "p99_us": 221.0
+  },
+  "e2e_direct operate CROB (accept mode, native)": {
+    "p50_us": 112.0,
+    "p99_us": 310.0
+  },
+  "e2e_select-before-operate CROB (accept mode)": {
+    "p50_us": 121.0,
+    "p99_us": 386.0
+  },
+  "e2e_direct operate CROB (Dart callback round trip)": {
+    "p50_us": 137.0,
+    "p99_us": 370.0
+  },
+  "e2e_select-before-operate CROB (2 Dart callbacks)": {
+    "p50_us": 243.0,
+    "p99_us": 721.0
+  },
+  "events_per_s": 1485100.726956806,
+  "worker_points_per_s": 69058865.77718848
+}
