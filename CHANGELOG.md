@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 * `MasterServer` releases the channel of an accepted connection when its session ends and
   calls the new `MasterServerHandler.closed`; a failing `start` releases the channel too.

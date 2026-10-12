@@ -2,7 +2,7 @@ name: dnp3
 description: >-
   DNP3 (IEEE 1815) master and outstation for Dart and Flutter on top of the stepfunc
   dnp3 Rust library, with zero-copy measurements and isolate-friendly handles.
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/gencto/dnp3_plugin
 issue_tracker: https://github.com/gencto/dnp3_plugin/issues
 topics:
@@ -11,7 +11,6 @@ topics:
   - ffi
   - industrial
   - protocol
-publish_to: none
 
 environment:
   sdk: ^3.10.0
