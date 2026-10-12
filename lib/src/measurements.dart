@@ -736,6 +736,9 @@ final class MeasurementFragment {
 
 /// Callback interface for [MeasurementFragment.visit]. Override what you need.
 abstract class MeasurementVisitor {
+  /// Const constructor for subclasses.
+  const MeasurementVisitor();
+
   /// Called for each binary input block (g1/g2); does nothing by default.
   void binaryInputs(BinaryInputBlock block) {}
 
@@ -946,9 +949,17 @@ sealed class _BinaryLike<T> extends _FixedBlock<T> {
   _BinaryLike(ByteData d, int h) : super(d, h, 16);
 
   int _rawValueAt(int i) => _d.getUint8(_p + i * 16 + 2);
+
+  /// Quality flags of record [i] (all-zero flags when the variation carries none).
   Flags flagsAt(int i) => Flags(_d.getUint8(_p + i * 16 + 3));
+
+  /// Time kind of record [i]: 0 no time, 1 synchronized, 2 unsynchronized.
   int timeKindAt(int i) => _d.getUint8(_p + i * 16 + 4);
+
+  /// Raw timestamp of record [i] in ms since the Unix epoch (0 when it carries no time).
   int timeMillisAt(int i) => _d.getUint64(_p + i * 16 + 8, _le);
+
+  /// Timestamp of record [i], or null when the variation carries no time.
   Dnp3Time? timeAt(int i) => Dnp3Time.decode(timeKindAt(i), timeMillisAt(i));
 }
 
@@ -991,10 +1002,20 @@ final class BinaryOutputStatusBlock extends _BinaryLike<BinaryOutputStatus> {
 /// `u16 index, u8 flags, u8 tk, u32 value, u64 time`
 sealed class _CounterLike<T> extends _FixedBlock<T> {
   _CounterLike(ByteData d, int h) : super(d, h, 16);
+
+  /// Value of record [i], read without allocating.
   int valueAt(int i) => _d.getUint32(_p + i * 16 + 4, _le);
+
+  /// Quality flags of record [i] (all-zero flags when the variation carries none).
   Flags flagsAt(int i) => Flags(_d.getUint8(_p + i * 16 + 2));
+
+  /// Time kind of record [i]: 0 no time, 1 synchronized, 2 unsynchronized.
   int timeKindAt(int i) => _d.getUint8(_p + i * 16 + 3);
+
+  /// Raw timestamp of record [i] in ms since the Unix epoch (0 when it carries no time).
   int timeMillisAt(int i) => _d.getUint64(_p + i * 16 + 8, _le);
+
+  /// Timestamp of record [i], or null when the variation carries no time.
   Dnp3Time? timeAt(int i) => Dnp3Time.decode(timeKindAt(i), timeMillisAt(i));
 }
 
@@ -1019,10 +1040,20 @@ final class FrozenCounterBlock extends _CounterLike<FrozenCounter> {
 /// `u16 index, u8 flags, u8 tk, u32 pad, f64 value, u64 time`
 sealed class _AnalogLike<T> extends _FixedBlock<T> {
   _AnalogLike(ByteData d, int h) : super(d, h, 24);
+
+  /// Value of record [i], read without allocating.
   double valueAt(int i) => _d.getFloat64(_p + i * 24 + 8, _le);
+
+  /// Quality flags of record [i] (all-zero flags when the variation carries none).
   Flags flagsAt(int i) => Flags(_d.getUint8(_p + i * 24 + 2));
+
+  /// Time kind of record [i]: 0 no time, 1 synchronized, 2 unsynchronized.
   int timeKindAt(int i) => _d.getUint8(_p + i * 24 + 3);
+
+  /// Raw timestamp of record [i] in ms since the Unix epoch (0 when it carries no time).
   int timeMillisAt(int i) => _d.getUint64(_p + i * 24 + 16, _le);
+
+  /// Timestamp of record [i], or null when the variation carries no time.
   Dnp3Time? timeAt(int i) => Dnp3Time.decode(timeKindAt(i), timeMillisAt(i));
 }
 

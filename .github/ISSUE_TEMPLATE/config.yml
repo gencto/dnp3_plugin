@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/gencto/dnp3_plugin/security/advisories/new
+    about: Please report security problems privately.
+  - name: DNP3 protocol stack (upstream)
+    url: https://github.com/stepfunc/dnp3/issues
+    about: Protocol behavior of the underlying Rust library.
+  - name: Documentation and API reference
+    url: https://pub.dev/documentation/dnp3/latest/
+    about: Every public member of the package is documented.

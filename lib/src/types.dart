@@ -56,7 +56,10 @@ final class Dnp3Time {
 }
 
 /// Measurement quality flags (bit field)
-extension type const Flags(int value) {
+extension type const Flags(
+  /// The raw flag byte (bit 0 = ONLINE ... bit 7 = point-type specific)
+  int value
+) {
   /// No flag set (0x00); note that this means OFFLINE.
   static const Flags none = Flags(0);
 

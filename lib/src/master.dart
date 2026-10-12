@@ -475,7 +475,10 @@ final class AssociationEvent {
 }
 
 /// Permissions of a DNP3 file (owner / group / world × read / write / execute)
-extension type const FilePermissions(int bits) {
+extension type const FilePermissions(
+  /// Raw 9-bit permission mask (owner rwx in bits 8..6, group 5..3, world 2..0)
+  int bits
+) {
   /// No permission
   static const FilePermissions none = FilePermissions(0);
 

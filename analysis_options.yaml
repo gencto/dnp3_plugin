@@ -9,3 +9,6 @@ analyzer:
 linter:
   rules:
     - public_member_api_docs
+
+formatter:
+  page_width: 110
