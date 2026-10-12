@@ -9,7 +9,7 @@ publish = false
 
 [lib]
 name = "dnp3_dart"
-crate-type = ["cdylib", "staticlib", "rlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 # Base feature set used on every target. `ffi` relaxes `non_exhaustive` on a few enums
