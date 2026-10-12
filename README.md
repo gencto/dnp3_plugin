@@ -280,8 +280,8 @@ Handler configuration (`OutstationHandlers`):
 
 | Concern | Native modes | Dart callback |
 |---|---|---|
-| SELECT / OPERATE | `ControlMode.accept` (mirror into BOS / AOS, notify), `reject(status)` | `ControlMode.callback` + `onControl: (req) => ControlResponse(status, tx)` |
-| cold / warm restart | `notSupported`, `seconds(n)`, `milliseconds(n)` | `RestartMode.callback` → `OutstationApplication.coldRestart()` |
+| SELECT / OPERATE | `ControlMode.accept` (mirror into BOS / AOS, notify), `ControlMode.reject` + `rejectStatus` | `ControlMode.callback` + `onControl: (req) => ControlResponse(status, tx)` |
+| cold / warm restart | `RestartMode.notSupported`, `seconds` / `milliseconds` + `coldRestartDelay` / `warmRestartDelay` | `RestartMode.callback` → `OutstationApplication.coldRestart()` |
 | time write | `notSupported`, `accept` (+ event) | `TimeWriteMode.callback` |
 | counter freeze | `notSupported`, `auto` (counter → frozen counter, freeze & clear, and FREEZE_AT_TIME: once, periodic, periodic relative to the hour — scheduled natively) | `FreezeMode.callback` → `(result, tx)` |
 | request with controls | in `accept` mode all mirrored values are written in one transaction | `onControlFragmentBegin` / `onControlFragmentEnd` → `DatabaseTransaction` applied before the response |

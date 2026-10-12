@@ -415,8 +415,29 @@ pub fn apply(
     out: Option<&mut [u8]>,
     index: Option<&mut PointIndex>,
 ) -> Result<i64> {
-    run(None, data, None, None)?;
+    validate(data)?;
     run(Some(db), data, out, index)
+}
+
+/// Validation pass of [`apply`]. Batches of plain updates (the hot path) are only scanned;
+/// anything else goes through a full dry run.
+fn validate(data: &[u8]) -> Result<()> {
+    const UPDATE_SIZE: usize = 24;
+    let mut pos = 0;
+    while pos < data.len() {
+        let Some(op) = data.get(pos..pos + UPDATE_SIZE) else {
+            break;
+        };
+        if op[0] != op::UPDATE || op[1] == kind::OCTET_STRING {
+            break;
+        }
+        check_point_type(op[1], false)?;
+        pos += UPDATE_SIZE;
+    }
+    if pos < data.len() {
+        run(None, data, None, None)?;
+    }
+    Ok(())
 }
 
 /// Decode and execute (or, with `db == None`, only validate) the ops in `data`

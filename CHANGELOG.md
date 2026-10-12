@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+* `MasterServer` releases the channel of an accepted connection when its session ends and
+  calls the new `MasterServerHandler.closed`; a failing `start` releases the channel too.
+* Requests addressed to an object that was destroyed in Dart (e.g. controls for a
+  server-hosted outstation) fall back to the native timeout behavior instead of being
+  answered with success.
+* Database batches are all-or-nothing: an invalid op no longer leaves the earlier ops
+  applied.
+* Values that would wrap on the wire (point indices, flags, CROB count / times, analog
+  output integers, dead bands, file parameters, processing / restart delays) throw
+  `RangeError`; the native side rejects out-of-range attribute integers and g34v1 dead
+  bands instead of truncating them.
+* FREEZE_AT_TIME periods below 100 ms are raised to 100 ms.
+* `Dnp3.closeIsolate` / `Dnp3.shutdown` close the event streams of the isolate's objects;
+  later calls fail with `ShutdownException`.
+* `MeasurementWorker` acknowledges a fragment even if the handler throws.
+* Internal helpers (`decodeResults`, `decodeAssociationMessage`, `decodeAttribute`,
+  `encodeAttribute`, the `ClientEvents` dispatch methods) are no longer part of the
+  public API.
+* The native library is built only as a dynamic library; ABI version 3
+  (`dnp3_association_set_time_offset` was removed, `Association.setTimeOffset` stays).
+
 ## 0.2.0
 
 * `ConnectionPolicy`: reconnect logic of TCP/TLS clients (masters and outstations) in Dart

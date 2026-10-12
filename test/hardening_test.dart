@@ -16,6 +16,12 @@ void main() {
       final ops = Uint8List.fromList([...tx.bytes, 99, 0, 0, 0]);
       expect(() => db.applyBytes(ops), throwsA(isA<Dnp3Exception>()));
       expect(db.getCounter(0)!.value, 0);
+
+      // fast path of plain updates: a bad point type in the second update
+      final bad = Uint8List.fromList(tx.bytes)..[1] = 200;
+      final both = Uint8List.fromList([...tx.bytes, ...bad]);
+      expect(() => db.applyBytes(both), throwsA(isA<Dnp3Exception>()));
+      expect(db.getCounter(0)!.value, 0);
     } finally {
       pair.close();
     }

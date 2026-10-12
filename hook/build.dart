@@ -83,7 +83,6 @@ String rustTriple(CodeConfig code) {
         Architecture.arm64 => 'aarch64-linux-android',
         Architecture.ia32 => 'i686-linux-android',
         Architecture.x64 => 'x86_64-linux-android',
-        Architecture.riscv64 => 'riscv64-linux-android',
         _ => throw UnsupportedError('Android/$arch is not supported'),
       };
     case OS.iOS:

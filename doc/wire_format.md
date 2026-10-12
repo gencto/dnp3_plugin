@@ -23,7 +23,7 @@ Every message is a 4 element list `[kind, a, b, payload]`:
 | 31 | APPLICATION_REQUEST | reply token | outstation id | `u8 type, u8[7], …` |
 | 32 | OUTSTATION_INFO | outstation id | event | packed int |
 | 33 | OUTSTATION_EVENT | outstation id | event | event specific |
-| 40 | MASTER_SERVER_REQUEST | reply token | server id | `u8 type, u8, u16 src, u16 dst, u16, u64 channel, blob addr` |
+| 40 | MASTER_SERVER_REQUEST | reply token | server id | `u8 type, u8, u16 src, u16 dst, u16, u64 channel, blob addr`; type 0 accept, 1 start, 2 accept link id, 3 start with link id, 4 session closed (token 0, no reply; the channel is already released) |
 | 41 | CONNECTION_REQUEST | reply token | channel / outstation id | next: `u8 0, u8[3], u32 failures, u32 next index, u32 endpoints`; disconnected: `u8 1, u8[3], blob "addr|host"` — reply 1 = connect (JSON `{endpoint, timeoutMs?, localEndpoint?, masterAddress?}`), 2 = wait (`u64 ms`), else native policy |
 
 Control records (kind 30) start with a phase byte: 0 SELECT, 1 OPERATE, 3 end of the
@@ -33,7 +33,19 @@ request containing controls.
 Measurement flow control: `dnp3_association_ack(id, n)` releases `n` fragments of an
 association created with `maxInFlightFragments > 0`.
 
-Requests (30, 31, 40) are answered with `dnp3_reply(token, status, data, len)`.
+Requests (23, 30, 31, 40, 41) are answered with `dnp3_reply(token, status, data, len)`:
+
+| kind | status |
+|---|---|
+| 23 FILE_OPEN_REQUEST | 1 continue the read, else abort |
+| 30 CONTROL_REQUEST | `CommandStatus` code; reply data = database ops |
+| 31 APPLICATION_REQUEST | time write / freeze: 0 ok, 1 parameter error, else not supported (freeze reply data = database ops); restart: 1 seconds, 2 milliseconds (`u16` delay), else not supported; attribute write: 1 accepted |
+| 40 MASTER_SERVER_REQUEST | 1 accepted (data = JSON), else rejected |
+| 41 CONNECTION_REQUEST | see above |
+
+Status `-1` (`REPLY_NO_HANDLER`) is sent when no object of the isolate handles the
+request (e.g. it was destroyed there): the native side then behaves as on a callback
+timeout (configured fallback / timeout status).
 
 ## Measurement fragment
 
@@ -99,4 +111,10 @@ Every op starts with `u8 op, u8 point type, u16 index`:
 | 5 | define attribute | `u8 writable, u8[3], attribute` |
 | 6 | discard unselected events | point type byte = class mask |
 
-Optional results: 24 bytes per op `u32 status, u32, u64 event id, u64 discarded id`.
+A batch is all-or-nothing: every op is validated before the first one is executed.
+
+Optional results: 24 bytes per op `u32 status, u32, u64 a, u64 b`. Status 0 = no point /
+failure, 1 = ok, 2 = event created (a = event id), 3 = event buffer overflow (a = created
+id, b = discarded id). For op 5 a failure carries the reason in `a` (1 already defined,
+2 bad type, 3 reserved variation, 4 not writable); op 6 reports the number of discarded
+events in `a`.

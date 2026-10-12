@@ -503,7 +503,7 @@ final class Database {
   Database(this.handle);
 
   /// Run `build` and apply the recorded operations atomically. Returns the number of
-  /// operations, or the per-operation results when `results` is true.
+  /// operations (see [transactionWithResults] for per-operation results).
   int transaction(void Function(DatabaseTransaction tx) build) {
     if (_inTransaction) throw StateError('nested transaction');
     _inTransaction = true;

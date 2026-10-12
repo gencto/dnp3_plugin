@@ -7,6 +7,8 @@ import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import 'config.dart';
 import 'connection_policy.dart';
 import 'errors.dart';
@@ -58,12 +60,14 @@ mixin ClientEvents {
   ConnectionPolicy? _connectionPolicy;
   List<String> _endpoints = const [];
 
+  @internal
   void setConnectionPolicy(ConnectionPolicy? policy, List<String> endpoints) {
     _connectionPolicy = policy;
     _endpoints = endpoints;
   }
 
   /// Answer a native connection request with the installed [ConnectionPolicy]
+  @internal
   void answerConnectionRequest(int token, Uint8List data) =>
       handleConnectionRequest(_connectionPolicy, _endpoints, token, data);
 
@@ -80,6 +84,7 @@ mixin ClientEvents {
   Stream<ConnectionEvent> get connectionEvents => _connectionEvents.stream;
 
   /// Returns true if the event was consumed
+  @internal
   bool handleClientEvent(int kind, int b, Object? payload) {
     switch (kind) {
       case Msg.clientState:
@@ -97,6 +102,7 @@ mixin ClientEvents {
     return false;
   }
 
+  @internal
   void closeClientEvents() {
     _clientStates.close();
     _portStates.close();
