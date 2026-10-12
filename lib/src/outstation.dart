@@ -714,7 +714,8 @@ final class Outstation with ClientEvents {
   /// Atomically apply database operations. See [DatabaseTransaction].
   int transaction(void Function(DatabaseTransaction tx) build) => database.transaction(build);
 
-  /// Enables the outstation; TCP/TLS client outstations start connecting once enabled.
+  /// Enables the outstation. TCP/TLS client outstations are created disabled and connect only
+  /// once enabled; serial, UDP and server outstations start enabled.
   Future<void> enable() => _rt.call((p, r) => dnp3_outstation_enable(handle, 1, p, r));
 
   /// Disables the outstation, closing its connection.
