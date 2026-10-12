@@ -157,10 +157,25 @@ Future<Uri> _cargoBuild(BuildInput input, CodeConfig code, String triple, String
     env['AR_${triple.replaceAll('-', '_')}'] = ar;
     // 16 KB page size support (required for Android 15+)
     env['CARGO_TARGET_${envTriple}_RUSTFLAGS'] = '-C link-arg=-Wl,-z,max-page-size=16384';
-  } else if (code.targetOS == OS.iOS) {
-    env['IPHONEOS_DEPLOYMENT_TARGET'] = '${code.iOS.targetVersion}.0';
-  } else if (code.targetOS == OS.macOS) {
-    env['MACOSX_DEPLOYMENT_TARGET'] = '${code.macOS.targetVersion}.0';
+  } else if (code.targetOS == OS.iOS || code.targetOS == OS.macOS) {
+    if (code.targetOS == OS.iOS) {
+      env['IPHONEOS_DEPLOYMENT_TARGET'] = '${code.iOS.targetVersion}.0';
+    } else {
+      env['MACOSX_DEPLOYMENT_TARGET'] = '${code.macOS.targetVersion}.0';
+    }
+    // Inside Xcode builds (Flutter) the hook environment carries no SDK, so C code of
+    // dependencies (ring) cannot find system headers: pass the SDK explicitly.
+    final sdk = code.targetOS == OS.macOS
+        ? 'macosx'
+        : (code.iOS.targetSdk == IOSSdk.iPhoneSimulator ? 'iphonesimulator' : 'iphoneos');
+    final sdkPath = await _xcrun(['--sdk', sdk, '--show-sdk-path']);
+    if (sdkPath != null) env['SDKROOT'] = sdkPath;
+    final cc = code.cCompiler;
+    if (cc != null) {
+      final ccTriple = triple.replaceAll('-', '_');
+      env['CC_$ccTriple'] = File.fromUri(cc.compiler).path;
+      env['AR_$ccTriple'] = File.fromUri(cc.archiver).path;
+    }
   }
 
   // make sure the std library for the target is installed (no-op without rustup)
@@ -194,4 +209,15 @@ Future<Uri> _cargoBuild(BuildInput input, CodeConfig code, String triple, String
   final out = File.fromUri(input.outputDirectory.resolve(fileName));
   await built.copy(out.path);
   return out.uri;
+}
+
+Future<String?> _xcrun(List<String> args) async {
+  try {
+    final r = await Process.run('xcrun', args);
+    if (r.exitCode != 0) return null;
+    final out = (r.stdout as String).trim();
+    return out.isEmpty ? null : out;
+  } on ProcessException {
+    return null;
+  }
 }
