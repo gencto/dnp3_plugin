@@ -25,6 +25,8 @@ pub struct Shared {
     pub application_iin: AtomicU8,
     pub processing_delay_ms: AtomicU16,
     pub points: Mutex<PointIndex>,
+    /// native FREEZE_AT_TIME schedule (`FreezeMode::Auto`)
+    freeze_task: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 impl Shared {
@@ -33,7 +35,46 @@ impl Shared {
             application_iin: AtomicU8::new(0),
             processing_delay_ms: AtomicU16::new(processing_delay_ms),
             points: Mutex::new(PointIndex::default()),
+            freeze_task: Mutex::new(None),
         })
+    }
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        if let Some(t) = self.freeze_task.get_mut().unwrap().take() {
+            t.abort();
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Next fire time (epoch ms) of a freeze schedule at or after `now`; `None` when a
+/// one-shot schedule has already fired.
+pub fn next_freeze_time(interval: FreezeInterval, now: u64, fired: bool) -> Option<u64> {
+    let periodic = |anchor: u64, period: u64| -> u64 {
+        if now <= anchor {
+            anchor
+        } else {
+            anchor + ((now - anchor) / period + 1) * period
+        }
+    };
+    match interval {
+        FreezeInterval::FreezeOnceImmediately => (!fired).then_some(now),
+        FreezeInterval::FreezeOnceAtTime(t) => (!fired).then_some(t.raw_value().max(now)),
+        FreezeInterval::PeriodicallyFreeze(t, period) => {
+            Some(periodic(t.raw_value(), period.max(1) as u64))
+        }
+        FreezeInterval::PeriodicallyFreezeRelative(period) => {
+            let hour_start = now - now % 3_600_000;
+            Some(periodic(hour_start, period.max(1) as u64))
+        }
     }
 }
 
@@ -79,6 +120,7 @@ pub mod event {
     pub const CONFIRM: i64 = 4;
     pub const COUNTERS_FROZEN: i64 = 5;
     pub const RESTART: i64 = 6;
+    pub const CONTROL_FRAGMENT_BEGIN: i64 = 7;
 }
 
 pub mod app_request {
@@ -160,6 +202,31 @@ struct DartControlHandler {
     port: DartPort,
     cfg: ControlHandlerDto,
     shared: Arc<Shared>,
+    /// accept mode: commanded values mirrored into the database at `end_fragment`, so a
+    /// request with N controls costs a single database transaction
+    pending_mirror: Vec<(Cmd, u16)>,
+}
+
+/// phase byte of control records: SELECT / OPERATE / end of the request fragment
+pub mod control_phase {
+    pub const SELECT: u8 = 0;
+    pub const OPERATE: u8 = 1;
+    pub const FRAGMENT_END: u8 = 3;
+}
+
+fn event_mode(x: u8) -> EventMode {
+    match x {
+        1 => EventMode::Force,
+        2 => EventMode::Suppress,
+        _ => EventMode::Detect,
+    }
+}
+
+fn apply_reply_ops(db: &mut Database, shared: &Shared, ops: &[u8], what: &str) {
+    let mut points = shared.points.lock().unwrap();
+    if let Err(e) = dbops::apply(db, ops, None, Some(&mut points)) {
+        tracing::warn!("invalid database ops in {what}: {}", e.message);
+    }
 }
 
 impl DartControlHandler {
@@ -170,14 +237,18 @@ impl DartControlHandler {
         op: Option<OperateType>,
         db: &mut DatabaseHandle,
     ) -> CommandStatus {
-        let phase = if op.is_some() { 1 } else { 0 };
+        let phase = if op.is_some() {
+            control_phase::OPERATE
+        } else {
+            control_phase::SELECT
+        };
         let op_code = op.map(op_type_code).unwrap_or(255);
         match self.cfg.mode {
             ControlModeDto::Reject => CommandStatus::from(self.cfg.reject_status),
             ControlModeDto::Accept => {
                 if op.is_some() {
                     if self.cfg.update_database {
-                        self.mirror(cmd, index, db);
+                        self.pending_mirror.push((cmd, index));
                     }
                     if self.cfg.notify {
                         post(
@@ -204,16 +275,9 @@ impl DartControlHandler {
                     Some(reply) => {
                         if !reply.data.is_empty() {
                             let shared = self.shared.clone();
-                            let res = db.transaction(|db| {
-                                let mut points = shared.points.lock().unwrap();
-                                dbops::apply(db, &reply.data, None, Some(&mut points))
+                            db.transaction(|db| {
+                                apply_reply_ops(db, &shared, &reply.data, "control reply")
                             });
-                            if let Err(e) = res {
-                                tracing::warn!(
-                                    "invalid database ops in control reply: {}",
-                                    e.message
-                                );
-                            }
                         }
                         CommandStatus::from(reply.status as u8)
                     }
@@ -222,16 +286,7 @@ impl DartControlHandler {
         }
     }
 
-    fn mirror(&self, cmd: Cmd, index: u16, db: &mut DatabaseHandle) {
-        let opts = UpdateOptions::new(
-            true,
-            match self.cfg.event_mode {
-                1 => EventMode::Force,
-                2 => EventMode::Suppress,
-                _ => EventMode::Detect,
-            },
-        );
-        let time = Timestamp::try_from_system_time(SystemTime::now()).map(Time::Synchronized);
+    fn mirror(db: &mut Database, cmd: Cmd, index: u16, opts: UpdateOptions, time: Option<Time>) {
         match cmd {
             Cmd::Crob(c) => {
                 let state = match (c.code.op_type, c.code.tcc) {
@@ -242,32 +297,27 @@ impl DartControlHandler {
                     _ => None,
                 };
                 if let Some(value) = state {
-                    db.transaction(|db| {
-                        db.update(
-                            index,
-                            &BinaryOutputStatus {
-                                value,
-                                flags: Flags::ONLINE,
-                                time,
-                            },
-                            opts,
-                        )
-                    });
-                }
-            }
-            _ => {
-                let value = cmd.analog_value();
-                db.transaction(|db| {
                     db.update(
                         index,
-                        &AnalogOutputStatus {
+                        &BinaryOutputStatus {
                             value,
                             flags: Flags::ONLINE,
                             time,
                         },
                         opts,
-                    )
-                });
+                    );
+                }
+            }
+            _ => {
+                db.update(
+                    index,
+                    &AnalogOutputStatus {
+                        value: cmd.analog_value(),
+                        flags: Flags::ONLINE,
+                        time,
+                    },
+                    opts,
+                );
             }
         }
     }
@@ -304,7 +354,60 @@ control_support!(Group41Var2, I16);
 control_support!(Group41Var3, F32);
 control_support!(Group41Var4, F64);
 
-impl ControlHandler for DartControlHandler {}
+impl ControlHandler for DartControlHandler {
+    fn begin_fragment(&mut self) {
+        self.pending_mirror.clear();
+        if self.cfg.fragment_callbacks {
+            post(
+                self.port,
+                msg::OUTSTATION_EVENT,
+                self.id,
+                event::CONTROL_FRAGMENT_BEGIN,
+                Payload::Null,
+            );
+        }
+    }
+
+    fn end_fragment(&mut self, database: &mut DatabaseHandle) -> MaybeAsync<()> {
+        if !self.pending_mirror.is_empty() {
+            let opts = UpdateOptions::new(true, event_mode(self.cfg.event_mode));
+            let time = Timestamp::try_from_system_time(SystemTime::now()).map(Time::Synchronized);
+            let pending = std::mem::take(&mut self.pending_mirror);
+            database.transaction(|db| {
+                for (cmd, index) in &pending {
+                    Self::mirror(db, *cmd, *index, opts, time);
+                }
+            });
+            self.pending_mirror = pending;
+            self.pending_mirror.clear();
+        }
+        if !self.cfg.fragment_callbacks {
+            return MaybeAsync::ready(());
+        }
+        // ask Dart (asynchronously, no worker is blocked) for database ops that complete
+        // the request; they are applied before the response is sent
+        let (port, id, timeout) = (
+            self.port,
+            self.id,
+            Duration::from_millis(self.cfg.timeout_ms),
+        );
+        let shared = self.shared.clone();
+        let db = database.clone();
+        let mut payload = vec![0u8; 24];
+        payload[0] = control_phase::FRAGMENT_END;
+        MaybeAsync::asynchronous(async move {
+            if let Some(reply) =
+                request_async(port, msg::CONTROL_REQUEST, id, payload, timeout).await
+            {
+                if !reply.data.is_empty() {
+                    db.transaction(|db| {
+                        apply_reply_ops(db, &shared, &reply.data, "control fragment end")
+                    });
+                }
+            }
+        })
+    }
+}
 
 // ---------------------------------------------------------------------------------------
 // outstation application
@@ -371,6 +474,62 @@ impl DartApplication {
             self.notify(event::RESTART, Payload::Int(cold as i64));
         }
         result
+    }
+}
+
+impl DartApplication {
+    /// Replace the current FREEZE_AT_TIME schedule
+    fn schedule_freeze(
+        &self,
+        interval: FreezeInterval,
+        start: u16,
+        stop: u16,
+        db: DatabaseHandle,
+        record: Vec<u8>,
+    ) {
+        let weak = Arc::downgrade(&self.shared);
+        let (port, id) = (self.port, self.id);
+        let task = tokio::spawn(async move {
+            let mut fired = false;
+            while let Some(at) = next_freeze_time(interval, now_ms(), fired) {
+                let wait = at.saturating_sub(now_ms());
+                if wait > 0 {
+                    tokio::time::sleep(Duration::from_millis(wait)).await;
+                }
+                let Some(shared) = weak.upgrade() else { return };
+                let ts = Timestamp::new(at);
+                db.transaction(|db| {
+                    let points = shared.points.lock().unwrap();
+                    dbops::freeze_counters(
+                        db,
+                        points.counters.range(start..=stop).copied(),
+                        false,
+                        ts,
+                    );
+                });
+                post(
+                    port,
+                    msg::OUTSTATION_EVENT,
+                    id,
+                    event::COUNTERS_FROZEN,
+                    Payload::CopiedBytes(record.clone()),
+                );
+                fired = true;
+                // never fire twice for the same instant
+                if now_ms() <= at {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        });
+        if let Some(old) = self
+            .shared
+            .freeze_task
+            .lock()
+            .unwrap()
+            .replace(task.abort_handle())
+        {
+            old.abort();
+        }
     }
 }
 
@@ -458,8 +617,9 @@ impl OutstationApplication for DartApplication {
         match self.cfg.freeze {
             FreezeModeDto::NotSupported => Err(RequestError::NotSupported),
             FreezeModeDto::Auto => {
-                if ft == 2 {
-                    return Err(RequestError::NotSupported);
+                if let FreezeType::FreezeAtTime(interval) = freeze_type {
+                    self.schedule_freeze(interval, start, stop, database.clone(), record);
+                    return Ok(());
                 }
                 let now =
                     Timestamp::try_from_system_time(SystemTime::now()).unwrap_or(Timestamp::zero());
@@ -477,13 +637,9 @@ impl OutstationApplication for DartApplication {
                 Some(reply) => {
                     if !reply.data.is_empty() {
                         let shared = self.shared.clone();
-                        let res = database.transaction(|db| {
-                            let mut points = shared.points.lock().unwrap();
-                            dbops::apply(db, &reply.data, None, Some(&mut points))
+                        database.transaction(|db| {
+                            apply_reply_ops(db, &shared, &reply.data, "freeze reply")
                         });
-                        if let Err(e) = res {
-                            tracing::warn!("invalid database ops in freeze reply: {}", e.message);
-                        }
                     }
                     request_error(reply.status)
                 }
@@ -701,6 +857,7 @@ fn handlers(id: u64, port: DartPort, h: &HandlersDto) -> Handlers {
             port,
             cfg: h.control,
             shared: shared.clone(),
+            pending_mirror: Vec::new(),
         }),
         shared,
     )
@@ -1034,4 +1191,47 @@ pub fn server_destroy(server: u64) -> Result<i64> {
     // dropping the ServerHandle shuts down the server and its outstations
     drop(entry);
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freeze_schedule() {
+        let t = |x| Timestamp::new(x);
+        assert_eq!(
+            next_freeze_time(FreezeInterval::FreezeOnceAtTime(t(500)), 100, false),
+            Some(500)
+        );
+        assert_eq!(
+            next_freeze_time(FreezeInterval::FreezeOnceAtTime(t(500)), 600, false),
+            Some(600)
+        );
+        assert_eq!(
+            next_freeze_time(FreezeInterval::FreezeOnceAtTime(t(500)), 600, true),
+            None
+        );
+        assert_eq!(
+            next_freeze_time(FreezeInterval::PeriodicallyFreeze(t(1000), 100), 900, false),
+            Some(1000)
+        );
+        assert_eq!(
+            next_freeze_time(FreezeInterval::PeriodicallyFreeze(t(1000), 100), 1050, true),
+            Some(1100)
+        );
+        assert_eq!(
+            next_freeze_time(FreezeInterval::PeriodicallyFreeze(t(1000), 100), 1100, true),
+            Some(1200)
+        );
+        let now = 3_600_000 * 5 + 61_000;
+        assert_eq!(
+            next_freeze_time(
+                FreezeInterval::PeriodicallyFreezeRelative(60_000),
+                now,
+                false
+            ),
+            Some(3_600_000 * 5 + 120_000)
+        );
+    }
 }

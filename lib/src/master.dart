@@ -8,6 +8,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'config.dart';
+import 'connection_policy.dart';
 import 'errors.dart';
 import 'measurements.dart';
 import 'native/bindings.dart';
@@ -53,6 +54,18 @@ mixin ClientEvents {
   final _connectionEvents = StreamController<ConnectionEvent>.broadcast();
 
   ClientStateEvent? _lastClientState;
+
+  ConnectionPolicy? _connectionPolicy;
+  List<String> _endpoints = const [];
+
+  void setConnectionPolicy(ConnectionPolicy? policy, List<String> endpoints) {
+    _connectionPolicy = policy;
+    _endpoints = endpoints;
+  }
+
+  /// Answer a native connection request with the installed [ConnectionPolicy]
+  void answerConnectionRequest(int token, Uint8List data) =>
+      handleConnectionRequest(_connectionPolicy, _endpoints, token, data);
 
   /// State of the TCP/TLS client (connecting, connected, waiting, ...)
   Stream<ClientStateEvent> get clientStates => _clientStates.stream;
@@ -109,11 +122,21 @@ final class MasterChannel with ClientEvents {
     if (_owned) _rt.register(handle, _onEvent);
   }
 
-  static MasterChannel _create(Map<String, Object?> transport, MasterChannelConfig config) {
+  static MasterChannel _create(
+    Map<String, Object?> transport,
+    MasterChannelConfig config, [
+    ConnectionPolicy? policy,
+  ]) {
     final rt = NativeRuntime.current;
+    if (policy != null) {
+      transport['connectionCallback'] = true;
+      transport['callbackTimeoutMs'] = policy.callbackTimeout.inMilliseconds;
+    }
     final json = toJson({'channel': config.toJson(), 'transport': transport});
     final id = withNativeString(json, (p, l) => dnp3_master_create(p, l, rt.port));
-    return MasterChannel._(check(id), rt, true);
+    final channel = MasterChannel._(check(id), rt, true);
+    channel.setConnectionPolicy(policy, (transport['endpoints'] as List?)?.cast<String>() ?? const []);
+    return channel;
   }
 
   /// TCP client connecting to `endpoints` (tried round-robin), e.g. `['127.0.0.1:20000']`
@@ -123,13 +146,18 @@ final class MasterChannel with ClientEvents {
     LinkErrorMode linkErrorMode = LinkErrorMode.close,
     ConnectStrategy connectStrategy = const ConnectStrategy(),
     ConnectOptions connectOptions = const ConnectOptions(),
-  }) => _create({
-    'type': 'tcp',
-    'endpoints': endpoints,
-    'linkErrorMode': linkErrorMode.name,
-    'connectStrategy': connectStrategy.toJson(),
-    'connectOptions': connectOptions.toJson(),
-  }, config);
+    ConnectionPolicy? connectionPolicy,
+  }) => _create(
+    {
+      'type': 'tcp',
+      'endpoints': endpoints,
+      'linkErrorMode': linkErrorMode.name,
+      'connectStrategy': connectStrategy.toJson(),
+      'connectOptions': connectOptions.toJson(),
+    },
+    config,
+    connectionPolicy,
+  );
 
   /// TLS client
   factory MasterChannel.tlsClient({
@@ -139,14 +167,19 @@ final class MasterChannel with ClientEvents {
     LinkErrorMode linkErrorMode = LinkErrorMode.close,
     ConnectStrategy connectStrategy = const ConnectStrategy(),
     ConnectOptions connectOptions = const ConnectOptions(),
-  }) => _create({
-    'type': 'tls',
-    'endpoints': endpoints,
-    'linkErrorMode': linkErrorMode.name,
-    'connectStrategy': connectStrategy.toJson(),
-    'connectOptions': connectOptions.toJson(),
-    'tls': tls.toJson(),
-  }, config);
+    ConnectionPolicy? connectionPolicy,
+  }) => _create(
+    {
+      'type': 'tls',
+      'endpoints': endpoints,
+      'linkErrorMode': linkErrorMode.name,
+      'connectStrategy': connectStrategy.toJson(),
+      'connectOptions': connectOptions.toJson(),
+      'tls': tls.toJson(),
+    },
+    config,
+    connectionPolicy,
+  );
 
   /// Serial port, e.g. `/dev/ttyUSB0` or `COM3` (not available on iOS)
   factory MasterChannel.serial({
@@ -181,7 +214,13 @@ final class MasterChannel with ClientEvents {
   /// Wrap a channel created natively by a [MasterServer]
   factory MasterChannel.adopt(int handle) => MasterChannel._(handle, NativeRuntime.current, true);
 
-  void _onEvent(int kind, int a, int b, Object? payload) => handleClientEvent(kind, b, payload);
+  void _onEvent(int kind, int a, int b, Object? payload) {
+    if (kind == Msg.connectionRequest) {
+      answerConnectionRequest(a, payload as Uint8List);
+    } else {
+      handleClientEvent(kind, b, payload);
+    }
+  }
 
   void _checkAlive() {
     if (_destroyed) throw StateError('MasterChannel has been destroyed');
@@ -220,6 +259,9 @@ final class MasterChannel with ClientEvents {
     String? udpDestination,
     bool information = false,
     SendPort? eventPort,
+    int maxInFlightFragments = 0,
+    Duration backpressureTimeout = const Duration(seconds: 30),
+    bool manualAck = false,
   }) async {
     _checkAlive();
     final json = utf8Bytes(
@@ -228,13 +270,16 @@ final class MasterChannel with ClientEvents {
         'udpDestination': udpDestination,
         'config': config.toJson(),
         'information': information,
+        'maxInFlightFragments': maxInFlightFragments,
+        'backpressureTimeoutMs': backpressureTimeout.inMilliseconds,
       }),
     );
     final events = eventPort?.nativePort ?? _rt.port;
     final id =
         await _rt.call((p, r) => dnp3_master_add_association(handle, json.address, json.length, events, p, r))
             as int;
-    final assoc = Association._(id, address, _rt, eventPort == null, this);
+    final assoc = Association._(id, address, _rt, eventPort == null, this)
+      .._autoAck = maxInFlightFragments > 0 && !manualAck;
     _associations.add(assoc);
     return assoc;
   }
@@ -397,8 +442,9 @@ final class FileReadTransfer {
   final _blocks = StreamController<Uint8List>();
   final _opened = Completer<int>();
   final NativeRuntime _rt;
+  final FutureOr<bool> Function(int size)? _onOpened;
 
-  FileReadTransfer._(this._id, this._rt) {
+  FileReadTransfer._(this._id, this._rt, [this._onOpened]) {
     _rt.register(_id, _onEvent);
   }
 
@@ -421,7 +467,20 @@ final class FileReadTransfer {
   /// Ask the master to abort the transfer at the next block
   void abort() => dnp3_file_read_abort(_id);
 
+  Future<void> _confirmOpen(int token, Uint8List data) async {
+    final size = ByteData.sublistView(data).getUint32(0, Endian.little);
+    var ok = false;
+    try {
+      ok = await (_onOpened?.call(size) ?? true);
+    } catch (_) {}
+    NativeRuntime.reply(token, ok ? 1 : 0);
+  }
+
   void _onEvent(int kind, int a, int b, Object? payload) {
+    if (kind == Msg.fileOpenRequest) {
+      _confirmOpen(a, payload as Uint8List);
+      return;
+    }
     switch (b) {
       case 0: // opened
         if (!_opened.isCompleted) _opened.complete(payload as int);
@@ -431,8 +490,8 @@ final class FileReadTransfer {
         _blocks.add(Uint8List.sublistView(data, 8, 8 + len));
       case 2: // aborted
         final s = payload as String;
-        final p = s.split('|');
-        final err = Dnp3Exception.fromNative(int.parse(p[0]), int.parse(p[1]), p.sublist(2).join('|'));
+        final sep = s.indexOf('|');
+        final err = decodeError(int.parse(s.substring(0, sep)), s.substring(sep + 1));
         if (!_opened.isCompleted) _opened.completeError(err);
         _blocks.addError(err);
         _finish();
@@ -461,6 +520,7 @@ final class Association {
   final _measurements = StreamController<MeasurementFragment>.broadcast(sync: true);
   final _information = StreamController<AssociationEvent>.broadcast();
   bool _released = false;
+  bool _autoAck = false;
 
   Association._(this.handle, this.address, this._rt, this._owned, [this._channel]) {
     if (_owned) _rt.register(handle, _onEvent);
@@ -487,6 +547,8 @@ final class Association {
         if (_measurements.hasListener) {
           _measurements.add(MeasurementFragment(payload as Uint8List));
         }
+        // listeners run synchronously: the fragment has been consumed
+        if (_autoAck) dnp3_association_ack(handle, 1);
       case Msg.associationInfo:
         _information.add(AssociationEvent.decode(b, payload as int));
     }
@@ -577,6 +639,15 @@ final class Association {
   /// Offset applied to the system clock when synchronizing outstations
   void setTimeOffset(Duration offset) =>
       check(dnp3_association_set_time_offset(handle, offset.inMilliseconds));
+
+  /// Clock used for time synchronization (automatic and [synchronizeTime])
+  void setTimeSource(TimeSource source) =>
+      check(dnp3_association_set_time_source(handle, source._mode, source._value));
+
+  /// Flow control (`maxInFlightFragments` > 0): mark `count` fragments as processed.
+  /// Called automatically after the synchronous listeners unless `manualAck` was set.
+  /// Returns the number of fragments still unacknowledged.
+  int acknowledge([int count = 1]) => check(dnp3_association_ack(handle, count));
 
   Future<void> writeDeadBands(List<DeadBandHeader> headers) {
     final req = DeadBandHeader.encodeAll(headers);
@@ -738,6 +809,8 @@ final class Association {
     int maxSize = 0x7FFFFFFF,
     String? user,
     String? password,
+    FutureOr<bool> Function(int size)? onOpened,
+    Duration openTimeout = const Duration(seconds: 2),
   }) {
     final s = utf8Bytes(path);
     final u = utf8Bytes(user ?? '');
@@ -755,10 +828,11 @@ final class Association {
         u.length,
         pw.address,
         pw.length,
+        onOpened == null ? 0 : openTimeout.inMilliseconds,
         _rt.port,
       ),
     );
-    return FileReadTransfer._(id, _rt);
+    return FileReadTransfer._(id, _rt, onOpened);
   }
 
   /// Remove the association from its channel
@@ -850,6 +924,8 @@ final class MeasurementWorker {
       final decoded = decodeAssociationMessage(message);
       if (decoded is MeasurementFragment) {
         onFragment(decoded);
+        // flow control: acknowledge in the worker (no-op without `maxInFlightFragments`)
+        dnp3_association_ack((message as List)[1] as int, 1);
       } else if (decoded is AssociationEvent) {
         onEvent?.call(decoded);
       }
@@ -861,4 +937,21 @@ final class MeasurementWorker {
   void close() {
     port.send(null);
   }
+}
+
+/// Clock used by an association to synchronize the outstation's time
+final class TimeSource {
+  final int _mode;
+  final int _value;
+  const TimeSource._(this._mode, this._value);
+
+  /// System clock shifted by `offset`
+  TimeSource.system([Duration offset = Duration.zero]) : this._(0, offset.inMilliseconds);
+
+  /// No valid time: synchronization fails with [TimeSyncError.systemTimeNotAvailable]
+  const TimeSource.unavailable() : this._(1, 0);
+
+  /// Externally provided time (GPS, NTP client, ...). It keeps running on the monotonic
+  /// clock until replaced, so it only needs to be refreshed occasionally.
+  TimeSource.manual(Dnp3Time now) : this._(2, now.millis);
 }

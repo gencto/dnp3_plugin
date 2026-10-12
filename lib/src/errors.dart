@@ -11,44 +11,50 @@ sealed class Dnp3Exception implements Exception {
 
   final String message;
 
-  const Dnp3Exception(this.code, this.subCode, this.message);
+  /// Structured description of the underlying library error, e.g.
+  /// `Link(Stdio(ConnectionReset))` or `MalformedResponse(InsufficientBytes)` (may be empty)
+  final String detail;
+
+  const Dnp3Exception(this.code, this.subCode, this.message, [this.detail = '']);
 
   /// Map a native (code, sub, message) triple to the most specific exception type
-  factory Dnp3Exception.fromNative(int code, int sub, String message) => switch (code) {
-    ErrorCode.task => TaskException(TaskError.fromCode(sub & 0xFF), sub, message),
-    ErrorCode.command => CommandException(sub, message),
-    ErrorCode.timeSync => TimeSyncException(sub, message),
-    ErrorCode.write => WriteException(sub, message),
-    ErrorCode.file => FileException(sub, message),
-    ErrorCode.association => AssociationException(sub, message),
-    ErrorCode.shutdown => ShutdownException(message),
-    ErrorCode.invalidHandle => InvalidHandleException(message),
-    ErrorCode.badConfig || ErrorCode.invalidArgument => ConfigException(code, message),
-    _ => NativeException(code, sub, message),
+  factory Dnp3Exception.fromNative(int code, int sub, String message, [String detail = '']) => switch (code) {
+    ErrorCode.task => TaskException(TaskError.fromCode(sub & 0xFF), sub, message, detail),
+    ErrorCode.command => CommandException(sub, message, detail),
+    ErrorCode.timeSync => TimeSyncException(sub, message, detail),
+    ErrorCode.write => WriteException(sub, message, detail),
+    ErrorCode.file => FileException(sub, message, detail),
+    ErrorCode.association => AssociationException(sub, message, detail),
+    ErrorCode.shutdown => ShutdownException(message, detail),
+    ErrorCode.invalidHandle => InvalidHandleException(message, detail),
+    ErrorCode.badConfig || ErrorCode.invalidArgument => ConfigException(code, message, detail),
+    _ => NativeException(code, sub, message, detail),
   };
 
   @override
-  String toString() => '$runtimeType: $message';
+  String toString() => '$runtimeType: $message${detail.isEmpty ? '' : ' [$detail]'}';
 }
 
 /// Generic native failure (I/O, TLS, unsupported platform feature, ...)
 final class NativeException extends Dnp3Exception {
-  const NativeException(super.code, super.subCode, super.message);
+  const NativeException(super.code, super.subCode, super.message, [super.detail]);
 }
 
 /// Invalid configuration or argument
 final class ConfigException extends Dnp3Exception {
-  const ConfigException(int code, String message) : super(code, 0, message);
+  const ConfigException(int code, String message, [String detail = '']) : super(code, 0, message, detail);
 }
 
 /// The object was destroyed or the handle is not valid in this process
 final class InvalidHandleException extends Dnp3Exception {
-  const InvalidHandleException(String message) : super(ErrorCode.invalidHandle, 0, message);
+  const InvalidHandleException(String message, [String detail = ''])
+    : super(ErrorCode.invalidHandle, 0, message, detail);
 }
 
 /// The channel / runtime has been shut down
 final class ShutdownException extends Dnp3Exception {
-  const ShutdownException(String message) : super(ErrorCode.shutdown, 0, message);
+  const ShutdownException(String message, [String detail = ''])
+    : super(ErrorCode.shutdown, 0, message, detail);
 }
 
 /// Errors of master tasks (mirrors `dnp3::master::TaskError`)
@@ -77,7 +83,8 @@ enum TaskError {
 
 final class TaskException extends Dnp3Exception {
   final TaskError error;
-  const TaskException(this.error, int sub, String message) : super(ErrorCode.task, sub, message);
+  const TaskException(this.error, int sub, String message, [String detail = ''])
+    : super(ErrorCode.task, sub, message, detail);
 
   /// IIN2 byte for [TaskError.rejectedByIin2]
   int get iin2 => subCode >> 8;
@@ -94,7 +101,8 @@ enum CommandResponseError {
 
 /// The outstation answered a command with something other than an echo + success
 final class CommandException extends Dnp3Exception {
-  const CommandException(int sub, String message) : super(ErrorCode.command, sub, message);
+  const CommandException(int sub, String message, [String detail = ''])
+    : super(ErrorCode.command, sub, message, detail);
 
   CommandResponseError get error {
     final c = subCode & 0xFF;
@@ -120,7 +128,8 @@ enum TimeSyncError {
 }
 
 final class TimeSyncException extends Dnp3Exception {
-  const TimeSyncException(int sub, String message) : super(ErrorCode.timeSync, sub, message);
+  const TimeSyncException(int sub, String message, [String detail = ''])
+    : super(ErrorCode.timeSync, sub, message, detail);
 
   TimeSyncError get error {
     final c = subCode & 0xFF;
@@ -128,12 +137,13 @@ final class TimeSyncException extends Dnp3Exception {
   }
 
   /// value attached to the error (outstation delay or IIN2 byte)
-  int get detail => subCode >> 8;
+  int get value => subCode >> 8;
 }
 
 /// The outstation set an IIN2 error bit in response to a WRITE / FREEZE / ...
 final class WriteException extends Dnp3Exception {
-  const WriteException(int iin2, String message) : super(ErrorCode.write, iin2, message);
+  const WriteException(int iin2, String message, [String detail = ''])
+    : super(ErrorCode.write, iin2, message, detail);
 
   int get iin2 => subCode;
 }
@@ -150,7 +160,8 @@ enum FileError {
 }
 
 final class FileException extends Dnp3Exception {
-  const FileException(int sub, String message) : super(ErrorCode.file, sub, message);
+  const FileException(int sub, String message, [String detail = ''])
+    : super(ErrorCode.file, sub, message, detail);
 
   FileError get error {
     final c = subCode & 0xFF;
@@ -162,7 +173,8 @@ final class FileException extends Dnp3Exception {
 }
 
 final class AssociationException extends Dnp3Exception {
-  const AssociationException(int sub, String message) : super(ErrorCode.association, sub, message);
+  const AssociationException(int sub, String message, [String detail = ''])
+    : super(ErrorCode.association, sub, message, detail);
 
   bool get duplicateAddress => subCode == 1;
   bool get wrongChannelType => subCode == 2;

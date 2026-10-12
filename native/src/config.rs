@@ -255,6 +255,29 @@ pub struct ClientDto {
     /// When set, the master address is overridden per connection (outstation clients only)
     #[serde(default)]
     pub master_address: Option<u16>,
+    /// Ask Dart which endpoint to try next / how long to wait (`ConnectionPolicy`)
+    #[serde(default)]
+    pub connection_callback: bool,
+    /// After this timeout the native round-robin policy is used for that decision
+    #[serde(default = "default_connection_callback_timeout")]
+    pub callback_timeout_ms: u64,
+}
+
+fn default_connection_callback_timeout() -> u64 {
+    1000
+}
+
+/// Reply of a Dart `ConnectionPolicy` to a `next` request
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectDecisionDto {
+    pub endpoint: String,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub local_endpoint: Option<String>,
+    #[serde(default)]
+    pub master_address: Option<u16>,
 }
 
 #[derive(Deserialize, Clone, Copy, Default)]
@@ -623,6 +646,15 @@ pub struct AddAssociationDto {
     /// forward association information events (task start/success/fail, unsolicited)
     #[serde(default)]
     pub information: bool,
+    /// flow control window (0 = disabled), see `measurement::Credits`
+    #[serde(default)]
+    pub max_in_flight_fragments: u32,
+    #[serde(default = "default_backpressure_timeout")]
+    pub backpressure_timeout_ms: u64,
+}
+
+fn default_backpressure_timeout() -> u64 {
+    30_000
 }
 
 // ---------------------------------------------------------------------------------------
@@ -837,6 +869,8 @@ pub struct ControlHandlerDto {
     /// Timeout for callback mode; on expiry the status below is returned
     pub timeout_ms: u64,
     pub timeout_status: u8,
+    /// notify the start of every control request and ask Dart for database ops at its end
+    pub fragment_callbacks: bool,
 }
 
 impl Default for ControlHandlerDto {
@@ -849,6 +883,7 @@ impl Default for ControlHandlerDto {
             notify: true,
             timeout_ms: 2000,
             timeout_status: 1, // TIMEOUT
+            fragment_callbacks: false,
         }
     }
 }

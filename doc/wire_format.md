@@ -1,6 +1,6 @@
 # Binary formats between Dart and native code
 
-All integers are little endian. ABI version: `1` (`dnp3_abi_version()`); the Dart side
+All integers are little endian. ABI version: `2` (`dnp3_abi_version()`); the Dart side
 refuses to run against a different version.
 
 ## Port messages (native → Dart)
@@ -9,7 +9,7 @@ Every message is a 4 element list `[kind, a, b, payload]`:
 
 | kind | name | a | b | payload |
 |---|---|---|---|---|
-| 1 | RESULT | request id | error code (0 = ok) | value, or `"sub|message"` on error |
+| 1 | RESULT | request id | error code (0 = ok) | value, or `"sub|detail|message"` on error |
 | 2 | LOG | level (1 error … 5 trace) | 0 | text |
 | 10 | CLIENT_STATE | object id | state | retry delay ms |
 | 11 | PORT_STATE | object id | state | retry delay ms |
@@ -17,12 +17,21 @@ Every message is a 4 element list `[kind, a, b, payload]`:
 | 13 | CONNECTION_EVENT | object id | 0 connecting, 1 connected, 2 failed, 3 disconnected, 4 resolution failed | `"addr|host"` |
 | 20 | MEASUREMENTS | association id | 0 | fragment (below) |
 | 21 | ASSOCIATION_INFO | association id | event | packed int |
-| 22 | FILE_READ | transfer id | 0 opened, 1 block, 2 aborted, 3 completed | size / `u32 block, u32 len, data` / error |
+| 22 | FILE_READ | transfer id | 0 opened, 1 block, 2 aborted, 3 completed | size / `u32 block, u32 len, data` / `"code|sub|detail|message"` |
+| 23 | FILE_OPEN_REQUEST | reply token | transfer id | `u32 size, u32` — reply 1 continue, else abort |
 | 30 | CONTROL_REQUEST | reply token | outstation id | control record |
 | 31 | APPLICATION_REQUEST | reply token | outstation id | `u8 type, u8[7], …` |
 | 32 | OUTSTATION_INFO | outstation id | event | packed int |
 | 33 | OUTSTATION_EVENT | outstation id | event | event specific |
 | 40 | MASTER_SERVER_REQUEST | reply token | server id | `u8 type, u8, u16 src, u16 dst, u16, u64 channel, blob addr` |
+| 41 | CONNECTION_REQUEST | reply token | channel / outstation id | next: `u8 0, u8[3], u32 failures, u32 next index, u32 endpoints`; disconnected: `u8 1, u8[3], blob "addr|host"` — reply 1 = connect (JSON `{endpoint, timeoutMs?, localEndpoint?, masterAddress?}`), 2 = wait (`u64 ms`), else native policy |
+
+Control records (kind 30) start with a phase byte: 0 SELECT, 1 OPERATE, 3 end of the
+request fragment (reply data = database ops). Outstation event 7 marks the beginning of a
+request containing controls.
+
+Measurement flow control: `dnp3_association_ack(id, n)` releases `n` fragments of an
+association created with `maxInFlightFragments > 0`.
 
 Requests (30, 31, 40) are answered with `dnp3_reply(token, status, data, len)`.
 

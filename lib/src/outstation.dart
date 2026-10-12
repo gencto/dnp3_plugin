@@ -6,6 +6,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'config.dart';
+import 'connection_policy.dart' show ConnectionPolicy;
 import 'database.dart';
 import 'master.dart' show ClientEvents;
 import 'measurements.dart';
@@ -294,16 +295,31 @@ final class OutstationHandlers {
   /// required when any application mode is `callback`
   final OutstationApplication? applicationCallbacks;
 
+  /// Called when the outstation starts processing a request containing controls
+  /// (`ControlHandler::begin_fragment`), before the first SELECT/OPERATE callback.
+  final void Function()? onControlFragmentBegin;
+
+  /// Called after all controls of a request were processed, before the response is sent
+  /// (`ControlHandler::end_fragment`). The returned operations are applied in a single
+  /// database transaction — the place to commit the effect of several controls at once.
+  /// Runs asynchronously on the native side: no protocol thread is blocked while waiting.
+  final FutureOr<DatabaseTransaction?> Function()? onControlFragmentEnd;
+
   const OutstationHandlers({
     this.control = const ControlHandlerConfig(),
     this.application = const ApplicationConfig(),
     this.information = false,
     this.onControl,
     this.applicationCallbacks,
+    this.onControlFragmentBegin,
+    this.onControlFragmentEnd,
   });
 
   Map<String, Object?> toJson() => {
-    'control': control.toJson(),
+    'control': {
+      ...control.toJson(),
+      'fragmentCallbacks': onControlFragmentBegin != null || onControlFragmentEnd != null,
+    },
     'application': application.toJson(),
     'information': information,
   };
@@ -330,12 +346,19 @@ final class Outstation with ClientEvents {
   static Outstation _create(
     OutstationConfig config,
     OutstationHandlers handlers,
-    Map<String, Object?> transport,
-  ) {
+    Map<String, Object?> transport, [
+    ConnectionPolicy? policy,
+  ]) {
     final rt = NativeRuntime.current;
+    if (policy != null) {
+      transport['connectionCallback'] = true;
+      transport['callbackTimeoutMs'] = policy.callbackTimeout.inMilliseconds;
+    }
     final json = toJson({'config': config.toJson(), 'handlers': handlers.toJson(), 'transport': transport});
     final id = withNativeString(json, (p, l) => dnp3_outstation_create(p, l, rt.port));
-    return Outstation._(check(id), rt, true, handlers);
+    final o = Outstation._(check(id), rt, true, handlers);
+    o.setConnectionPolicy(policy, (transport['endpoints'] as List?)?.cast<String>() ?? const []);
+    return o;
   }
 
   /// Outstation that connects to a master acting as a TCP server
@@ -346,13 +369,16 @@ final class Outstation with ClientEvents {
     LinkErrorMode linkErrorMode = LinkErrorMode.close,
     ConnectStrategy connectStrategy = const ConnectStrategy(),
     ConnectOptions connectOptions = const ConnectOptions(),
+    int? masterAddress,
+    ConnectionPolicy? connectionPolicy,
   }) => _create(config, handlers, {
     'type': 'tcpClient',
     'endpoints': endpoints,
     'linkErrorMode': linkErrorMode.name,
     'connectStrategy': connectStrategy.toJson(),
     'connectOptions': connectOptions.toJson(),
-  });
+    'masterAddress': ?masterAddress,
+  }, connectionPolicy);
 
   factory Outstation.tlsClient({
     required OutstationConfig config,
@@ -362,14 +388,17 @@ final class Outstation with ClientEvents {
     LinkErrorMode linkErrorMode = LinkErrorMode.close,
     ConnectStrategy connectStrategy = const ConnectStrategy(),
     ConnectOptions connectOptions = const ConnectOptions(),
+    int? masterAddress,
+    ConnectionPolicy? connectionPolicy,
   }) => _create(config, handlers, {
     'type': 'tlsClient',
     'endpoints': endpoints,
     'linkErrorMode': linkErrorMode.name,
     'connectStrategy': connectStrategy.toJson(),
     'connectOptions': connectOptions.toJson(),
+    'masterAddress': ?masterAddress,
     'tls': tls.toJson(),
-  });
+  }, connectionPolicy);
 
   /// Serial outstation. With `retry` the port is re-opened after failures (fault tolerant).
   factory Outstation.serial({
@@ -417,7 +446,16 @@ final class Outstation with ClientEvents {
   void _onEvent(int kind, int a, int b, Object? payload) {
     switch (kind) {
       case Msg.controlRequest:
-        _handleControl(a, payload as Uint8List);
+        final data = payload as Uint8List;
+        if (data[0] == 3) {
+          _handleFragmentEnd(a);
+        } else {
+          _handleControl(a, data);
+        }
+      case Msg.connectionRequest:
+        answerConnectionRequest(a, payload as Uint8List);
+      case Msg.outstationEvent when b == 7:
+        _handlers?.onControlFragmentBegin?.call();
       case Msg.applicationRequest:
         _handleApplication(a, payload as Uint8List);
       case Msg.outstationEvent:
@@ -429,6 +467,15 @@ final class Outstation with ClientEvents {
         _connection.add(b == 1 ? ConnectionState.connected : ConnectionState.disconnected);
       default:
         handleClientEvent(kind, b, payload);
+    }
+  }
+
+  Future<void> _handleFragmentEnd(int token) async {
+    try {
+      final tx = await _handlers?.onControlFragmentEnd?.call();
+      NativeRuntime.reply(token, 0, tx?.bytes);
+    } catch (_) {
+      NativeRuntime.reply(token, 0);
     }
   }
 

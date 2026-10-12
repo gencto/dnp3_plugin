@@ -4,6 +4,7 @@
 library;
 
 export 'src/config.dart';
+export 'src/connection_policy.dart' hide handleConnectionRequest;
 export 'src/database.dart';
 export 'src/dnp3_runtime.dart';
 export 'src/errors.dart';

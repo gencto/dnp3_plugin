@@ -1,7 +1,7 @@
 // Constants shared with native/src/core.rs. Keep in sync.
 
 /// ABI version expected from the native library
-const int abiVersion = 1;
+const int abiVersion = 2;
 
 abstract final class Msg {
   static const int result = 1;
@@ -13,11 +13,13 @@ abstract final class Msg {
   static const int measurements = 20;
   static const int associationInfo = 21;
   static const int fileRead = 22;
+  static const int fileOpenRequest = 23;
   static const int controlRequest = 30;
   static const int applicationRequest = 31;
   static const int outstationInfo = 32;
   static const int outstationEvent = 33;
   static const int masterServerRequest = 40;
+  static const int connectionRequest = 41;
 }
 
 abstract final class ErrorCode {

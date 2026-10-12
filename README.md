@@ -180,17 +180,21 @@ await a.freezeCounters(clear: true);
 await a.enableUnsolicited(EventClasses.all()) / disableUnsolicited(...);
 await a.writeAttribute(DeviceAttribute.string(AttributeVariation.userAssignedLocation, 'Kyiv'));
 await a.sendAndExpectEmptyResponse(FunctionCode.freezeAtTime,
-    RequestHeaders()..allObjects(Variation.group20Var0)..timeAndInterval(Dnp3Time.now(), 60000));
+    RequestHeaders()..timeAndInterval(Dnp3Time.now(), 60000)..allObjects(Variation.group20Var0));
 await a.checkLinkStatus();
 final poll = await a.addPoll(ReadRequest.events(), Duration(seconds: 1)); poll.demand(); poll.remove();
 a.setTimeOffset(Duration(hours: -1));
+a.setTimeSource(TimeSource.manual(gpsTime));   // or TimeSource.system(offset) / TimeSource.unavailable()
 
 // files
 final key = await a.getFileAuthKey('user', 'pass');
 final f = await a.openFile('/log.txt', authKey: key, mode: FileMode.read);
-a.readFile('/log.txt').blocks.listen(...);   // streaming, abortable
+a.readFile('/log.txt', onOpened: (size) => size < 1 << 20).blocks.listen(...);  // streaming, abortable
 await a.writeFile('/cfg.bin', bytes);        // open + blocks + close
 await a.readDirectory('/'); await a.getFileInfo('/x');
+
+// reconnect logic in Dart (TCP / TLS masters and outstation clients)
+MasterChannel.tcpClient(..., connectionPolicy: MyPolicy());   // next() → connect(endpoint) | wait(delay)
 
 // master as TCP server (outstations connect to us)
 final server = await MasterServer.bind('0.0.0.0:20000', MyHandler());   // accept / start / acceptLinkId
@@ -206,10 +210,53 @@ knows its variation, qualifier, `isEvent` and `hasFlags`, and is both a lazily d
 `List<T>` and a flyweight with `indexAt / valueAt / flagsAt / timeAt` accessors. A
 `MeasurementVisitor` dispatches all blocks of a fragment by type.
 
+### Flow control (back-pressure)
+
+```dart
+final a = await channel.addAssociation(1024, maxInFlightFragments: 8, manualAck: true);
+a.measurements.listen((f) async {
+  await store(f);        // slow consumer
+  a.acknowledge();       // releases one slot
+});
+```
+
+With `maxInFlightFragments > 0` the native read handler suspends after posting that many
+unacknowledged fragments. The master then stops reading the channel, so TCP flow control
+slows the outstation down instead of letting fragments pile up in the Dart heap. Without
+`manualAck` every fragment is acknowledged right after the synchronous listeners ran;
+`MeasurementWorker` acknowledges after its callback. `backpressureTimeout` (default 30 s)
+bounds the wait if a consumer stops acknowledging.
+
+### Connection policy
+
+```dart
+class FailoverPolicy extends ConnectionPolicy {
+  @override
+  ConnectDecision next(ConnectContext c) => c.failures < 3
+      ? const ConnectDecision.connect('10.0.0.1:20000')
+      : const ConnectDecision.connect('10.0.0.2:20000', timeout: Duration(seconds: 2));
+
+  @override
+  Duration disconnected(String address, String? host) => const Duration(seconds: 5);
+}
+```
+
+Every method may be async. If no answer arrives within `callbackTimeout` (default 1 s), or
+a method returns null, the native round-robin policy with exponential back-off decides.
+`ConnectDecision.connect` can also set the connect timeout, the local endpoint and, for
+outstation clients, the master address of that connection.
+
+### Error details
+
+Every exception carries `detail` with the structured library error, e.g.
+`Link(Stdio(ConnectionReset))`, `MalformedResponse(InsufficientBytes)`,
+`RejectedByIin2(Iin { ... })`.
+
 ## Outstation API
 
 ```dart
-Outstation.tcpClient(...) / tlsClient(...) / serial(path:, retry: RetryStrategy()) / udp(...)
+Outstation.tcpClient(..., masterAddress: 1, connectionPolicy: ...) / tlsClient(...)
+Outstation.serial(path:, retry: RetryStrategy()) / Outstation.udp(...)
 final server = OutstationServer.tcp('0.0.0.0:20000');           // or .tls(address, TlsConfig)
 final o = server.addOutstation(config: ..., handlers: ..., filter: AddressFilter.wildcard('10.0.0.*'));
 await server.bind();
@@ -236,7 +283,8 @@ Handler configuration (`OutstationHandlers`):
 | SELECT / OPERATE | `ControlMode.accept` (mirror into BOS / AOS, notify), `reject(status)` | `ControlMode.callback` + `onControl: (req) => ControlResponse(status, tx)` |
 | cold / warm restart | `notSupported`, `seconds(n)`, `milliseconds(n)` | `RestartMode.callback` → `OutstationApplication.coldRestart()` |
 | time write | `notSupported`, `accept` (+ event) | `TimeWriteMode.callback` |
-| counter freeze | `notSupported`, `auto` (counter → frozen counter, optional clear) | `FreezeMode.callback` → `(result, tx)` |
+| counter freeze | `notSupported`, `auto` (counter → frozen counter, freeze & clear, and FREEZE_AT_TIME: once, periodic, periodic relative to the hour — scheduled natively) | `FreezeMode.callback` → `(result, tx)` |
+| request with controls | in `accept` mode all mirrored values are written in one transaction | `onControlFragmentBegin` / `onControlFragmentEnd` → `DatabaseTransaction` applied before the response |
 | attribute write | `accept` (+ event), `reject` | `AttributeWriteMode.callback` (async) |
 | dead band writes / confirms | notifications | — |
 
@@ -362,7 +410,7 @@ A synchronous Dart control callback adds ~25 µs (p50) per SELECT/OPERATE.
 ## Testing
 
 ```sh
-dart test                    # builds native/ through the hook, 43 tests
+dart test                    # builds native/ through the hook, 54 tests
 (cd native && cargo test)    # Rust unit tests
 ```
 

@@ -317,7 +317,7 @@ final class RequestHeaders {
     return this;
   }
 
-  /// g50v2 time and interval (used by FREEZE_AT_TIME)
+  /// g50v2 time and interval (used by FREEZE_AT_TIME). Must precede the counter headers.
   RequestHeaders timeAndInterval(Dnp3Time time, int intervalMs) {
     _w
       ..u8(5)

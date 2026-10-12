@@ -276,8 +276,8 @@ void main() {
 
     test('freeze at time header is encoded', () async {
       final headers = RequestHeaders()
-        ..allObjects(Variation.group20Var0)
-        ..timeAndInterval(Dnp3Time.now(), 1000);
+        ..timeAndInterval(Dnp3Time.now(), 1000)
+        ..allObjects(Variation.group20Var0);
       await expectLater(
         pair.association.sendAndExpectEmptyResponse(FunctionCode.freezeAtTime, headers),
         throwsA(isA<Dnp3Exception>()), // freeze not supported by this outstation

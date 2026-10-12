@@ -87,6 +87,12 @@ external int dnp3_association_remove(int id, int port, int request);
 @Native<Int64 Function(Uint64, Int64)>(isLeaf: true)
 external int dnp3_association_set_time_offset(int id, int offsetMs);
 
+@Native<Int64 Function(Uint64, Uint8, Int64)>(isLeaf: true)
+external int dnp3_association_set_time_source(int id, int mode, int value);
+
+@Native<Int64 Function(Uint64, Int64)>(isLeaf: true)
+external int dnp3_association_ack(int id, int n);
+
 @Native<Int64 Function(Uint64, Pointer<Uint8>, Size, Int64, Int64)>(isLeaf: true)
 external int dnp3_association_read(int id, Pointer<Uint8> req, int len, int port, int request);
 
@@ -221,6 +227,7 @@ external int dnp3_association_read_directory(
     Size,
     Pointer<Uint8>,
     Size,
+    Uint64,
     Int64,
   )
 >(isLeaf: true)
@@ -235,6 +242,7 @@ external int dnp3_association_read_file(
   int userLen,
   Pointer<Uint8> password,
   int passwordLen,
+  int confirmOpenTimeoutMs,
   int events,
 );
 

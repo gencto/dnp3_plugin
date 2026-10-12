@@ -98,7 +98,11 @@ final class NativeRuntime {
         }
       case Msg.log:
         _logHandler?.call(a, payload as String);
-      case Msg.controlRequest || Msg.applicationRequest || Msg.masterServerRequest:
+      case Msg.controlRequest ||
+          Msg.applicationRequest ||
+          Msg.masterServerRequest ||
+          Msg.connectionRequest ||
+          Msg.fileOpenRequest:
         // a = reply token, b = object id
         final t = _targets[b];
         if (t != null) {
@@ -147,12 +151,13 @@ final class NativeRuntime {
   }
 }
 
-/// Decode an error payload (`"sub|message"`)
+/// Decode an error payload (`"sub|detail|message"`)
 Dnp3Exception decodeError(int code, String payload) {
-  final sep = payload.indexOf('|');
-  final sub = sep > 0 ? int.tryParse(payload.substring(0, sep)) ?? 0 : 0;
-  final msg = sep >= 0 ? payload.substring(sep + 1) : payload;
-  return Dnp3Exception.fromNative(code, sub, msg);
+  final a = payload.indexOf('|');
+  final b = a < 0 ? -1 : payload.indexOf('|', a + 1);
+  if (b < 0) return Dnp3Exception.fromNative(code, 0, payload);
+  final sub = int.tryParse(payload.substring(0, a)) ?? 0;
+  return Dnp3Exception.fromNative(code, sub, payload.substring(b + 1), payload.substring(a + 1, b));
 }
 
 /// Exception for a negative return code of a synchronous native call

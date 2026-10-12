@@ -1,6 +1,6 @@
 //! Master side: channels, associations, polls, commands and file transfer.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -24,7 +24,49 @@ pub struct AssociationEntry {
     pub handle: AssociationHandle,
     pub master: u64,
     pub polls: Mutex<Vec<u64>>,
-    pub time_offset_ms: Arc<AtomicI64>,
+    pub time: Arc<TimeSource>,
+}
+
+/// flow control of associations, registered before the association exists so that early
+/// fragments (startup integrity scan) can already be acknowledged
+pub static CREDITS: Registry<Arc<crate::measurement::Credits>> = Registry::new();
+
+/// Clock used by an association for time synchronization
+pub enum TimeMode {
+    /// system clock shifted by an offset
+    System { offset_ms: i64 },
+    /// no time available: synchronization fails with `SystemTimeNotAvailable`
+    Unavailable,
+    /// externally provided time (e.g. GPS) that keeps running on the monotonic clock
+    Manual {
+        base_ms: u64,
+        at: std::time::Instant,
+    },
+}
+
+pub struct TimeSource {
+    mode: Mutex<TimeMode>,
+}
+
+impl TimeSource {
+    fn now(&self) -> Option<Timestamp> {
+        match *self.mode.lock().unwrap() {
+            TimeMode::System { offset_ms } => {
+                let now = SystemTime::now();
+                let t = if offset_ms >= 0 {
+                    now.checked_add(Duration::from_millis(offset_ms as u64))?
+                } else {
+                    now.checked_sub(Duration::from_millis(offset_ms.unsigned_abs()))?
+                };
+                Timestamp::try_from_system_time(t)
+            }
+            TimeMode::Unavailable => None,
+            TimeMode::Manual { base_ms, at } => {
+                let ms = base_ms.checked_add(at.elapsed().as_millis() as u64)?;
+                (ms <= Timestamp::MAX_VALUE).then(|| Timestamp::new(ms))
+            }
+        }
+    }
 }
 
 pub static MASTERS: Registry<Arc<MasterEntry>> = Registry::new();
@@ -34,6 +76,7 @@ static FILE_READS: Registry<Arc<AtomicBool>> = Registry::new();
 
 pub fn clear() {
     POLLS.clear();
+    CREDITS.clear();
     ASSOCIATIONS.clear();
     MASTERS.clear();
     FILE_READS.clear();
@@ -160,6 +203,9 @@ pub fn destroy(id: u64) -> Result<i64> {
 }
 
 fn drop_association_entry(id: u64) {
+    if let Some(c) = CREDITS.remove(id) {
+        c.close();
+    }
     if let Some(a) = ASSOCIATIONS.remove(id) {
         for p in a.polls.lock().unwrap().drain(..) {
             POLLS.remove(p);
@@ -206,19 +252,12 @@ pub fn get_decode_level(id: u64, c: Completion) -> Result<i64> {
 // ---------------------------------------------------------------------------------------
 
 struct TimeProvider {
-    offset_ms: Arc<AtomicI64>,
+    source: Arc<TimeSource>,
 }
 
 impl AssociationHandler for TimeProvider {
     fn get_current_time(&self) -> Option<Timestamp> {
-        let offset = self.offset_ms.load(Ordering::Relaxed);
-        let now = SystemTime::now();
-        let t = if offset >= 0 {
-            now.checked_add(Duration::from_millis(offset as u64))?
-        } else {
-            now.checked_sub(Duration::from_millis(offset.unsigned_abs()))?
-        };
-        Timestamp::try_from_system_time(t)
+        self.source.now()
     }
 }
 
@@ -315,13 +354,24 @@ pub fn add_association(master: u64, json: &str, events: DartPort, c: Completion)
     };
     let mut ch = channel(master)?;
     let id = next_id();
-    let offset = Arc::new(AtomicI64::new(0));
+    let time = Arc::new(TimeSource {
+        mode: Mutex::new(TimeMode::System { offset_ms: 0 }),
+    });
+    let credits = (dto.max_in_flight_fragments > 0).then(|| {
+        let c = Arc::new(crate::measurement::Credits::new(
+            dto.max_in_flight_fragments,
+            Duration::from_millis(dto.backpressure_timeout_ms),
+        ));
+        CREDITS.insert_with_id(id, c.clone());
+        c
+    });
     let read_handler = Box::new(MeasurementHandler::new(Sink::Port {
         port: events,
         id: id as i64,
+        credits,
     }));
     let assoc_handler = Box::new(TimeProvider {
-        offset_ms: offset.clone(),
+        source: time.clone(),
     });
     let info = Box::new(InfoForwarder {
         port: events,
@@ -347,7 +397,12 @@ pub fn add_association(master: u64, json: &str, events: DartPort, c: Completion)
                 .await
             }
         }
-        .map_err(association_error)?;
+        .map_err(|e| {
+            if let Some(c) = CREDITS.remove(id) {
+                c.close();
+            }
+            association_error(e)
+        })?;
 
         // the master may have been destroyed concurrently
         let registered = MASTERS.with(master, |m| m.children.lock().unwrap().push(id));
@@ -360,7 +415,7 @@ pub fn add_association(master: u64, json: &str, events: DartPort, c: Completion)
                 handle,
                 master,
                 polls: Mutex::new(Vec::new()),
-                time_offset_ms: offset,
+                time,
             }),
         );
         Ok(id as i64)
@@ -377,8 +432,35 @@ pub fn remove_association(id: u64, c: Completion) -> Result<i64> {
     spawn_op(c, async move { handle.remove().await.map_err(Error::from) })
 }
 
+/// Acknowledge `n` processed measurement fragments (flow control)
+pub fn ack(id: u64, n: i64) -> Result<i64> {
+    CREDITS.with(id, |c| {
+        c.ack(n);
+        c.in_flight()
+    })
+}
+
 pub fn set_time_offset(id: u64, offset_ms: i64) -> Result<i64> {
-    ASSOCIATIONS.with(id, |a| a.time_offset_ms.store(offset_ms, Ordering::Relaxed))?;
+    set_time_source(id, 0, offset_ms)
+}
+
+/// mode 0: system clock + `value` ms, 1: unavailable, 2: manual time `value` (epoch ms)
+pub fn set_time_source(id: u64, mode: u8, value: i64) -> Result<i64> {
+    let mode = match mode {
+        0 => TimeMode::System { offset_ms: value },
+        1 => TimeMode::Unavailable,
+        2 => {
+            if value < 0 || value as u64 > Timestamp::MAX_VALUE {
+                return Err(Error::arg("manual time out of the 48-bit DNP3 range"));
+            }
+            TimeMode::Manual {
+                base_ms: value as u64,
+                at: std::time::Instant::now(),
+            }
+        }
+        x => return Err(Error::arg(format!("unknown time source mode {x}"))),
+    };
+    ASSOCIATIONS.with(id, |a| *a.time.mode.lock().unwrap() = mode)?;
     Ok(0)
 }
 
@@ -688,6 +770,8 @@ struct DartFileReader {
     port: DartPort,
     id: i64,
     abort: Arc<AtomicBool>,
+    /// ask Dart whether to continue once the size is known (None = always continue)
+    confirm_open: Option<Duration>,
 }
 
 impl DartFileReader {
@@ -709,6 +793,18 @@ impl FileReader for DartFileReader {
             file_event::OPENED,
             Payload::Int(size as i64),
         );
+        if let Some(timeout) = self.confirm_open {
+            // payload: u32 size, u32 pad; reply status 1 = continue, anything else = abort
+            let mut payload = size.to_le_bytes().to_vec();
+            payload.extend_from_slice(&[0; 4]);
+            let accepted =
+                request_sync(self.port, msg::FILE_OPEN_REQUEST, self.id, payload, timeout)
+                    .map(|r| r.status == 1)
+                    .unwrap_or(false);
+            if !accepted {
+                return FileAction::Abort;
+            }
+        }
         self.action()
     }
 
@@ -736,7 +832,7 @@ impl FileReader for DartFileReader {
             msg::FILE_READ,
             self.id,
             file_event::ABORTED,
-            Payload::Str(format!("{}|{}|{}", e.code, e.sub, e.message)),
+            Payload::Str(format!("{}|{}", e.code, e.encode())),
         );
     }
 
@@ -760,6 +856,7 @@ pub fn read_file(
     max_file_size: u64,
     user: Option<&str>,
     password: Option<&str>,
+    confirm_open_timeout_ms: u64,
     events: DartPort,
 ) -> Result<i64> {
     let mut a = association(id)?;
@@ -769,6 +866,8 @@ pub fn read_file(
         port: events,
         id: read_id as i64,
         abort,
+        confirm_open: (confirm_open_timeout_ms > 0)
+            .then(|| Duration::from_millis(confirm_open_timeout_ms)),
     });
     let config = FileReadConfig {
         max_block_size,
@@ -784,7 +883,7 @@ pub fn read_file(
                 msg::FILE_READ,
                 read_id as i64,
                 file_event::ABORTED,
-                Payload::Str(format!("{}|0|master has been shut down", err::SHUTDOWN)),
+                Payload::Str(format!("{}|0||master has been shut down", err::SHUTDOWN)),
             );
         }
     })?;

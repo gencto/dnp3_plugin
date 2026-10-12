@@ -237,6 +237,19 @@ pub extern "C" fn dnp3_association_set_time_offset(id: u64, offset_ms: i64) -> i
     run(|| master::set_time_offset(id, offset_ms))
 }
 
+/// Acknowledge processed measurement fragments of an association with flow control.
+/// Returns the number of fragments still in flight. Never calls back into Dart.
+#[no_mangle]
+pub extern "C" fn dnp3_association_ack(id: u64, n: i64) -> i64 {
+    run(|| master::ack(id, n))
+}
+
+/// mode 0: system clock + `value` ms, 1: time unavailable, 2: manual time `value` (epoch ms)
+#[no_mangle]
+pub extern "C" fn dnp3_association_set_time_source(id: u64, mode: u8, value: i64) -> i64 {
+    run(|| master::set_time_source(id, mode, value))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn dnp3_association_read(
     id: u64,
@@ -459,6 +472,7 @@ pub unsafe extern "C" fn dnp3_association_read_file(
     user_len: usize,
     password: *const u8,
     password_len: usize,
+    confirm_open_timeout_ms: u64,
     events: i64,
 ) -> i64 {
     run(|| {
@@ -470,6 +484,7 @@ pub unsafe extern "C" fn dnp3_association_read_file(
             max_file_size,
             opt_str(user, user_len, present)?,
             opt_str(password, password_len, present)?,
+            confirm_open_timeout_ms,
             events,
         )
     })
@@ -661,8 +676,11 @@ pub extern "C" fn dnp3_bench_emit(port: i64, fragments: u32, points: u32, reques
                 iin: Iin::default(),
             };
             let info = bench_header_info();
-            let mut handler =
-                measurement::MeasurementHandler::new(measurement::Sink::Port { port, id: 0 });
+            let mut handler = measurement::MeasurementHandler::new(measurement::Sink::Port {
+                port,
+                id: 0,
+                credits: None,
+            });
             let start = std::time::Instant::now();
             for f in 0..fragments {
                 let _ = handler.begin_fragment(ReadType::PeriodicPoll, header);

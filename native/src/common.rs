@@ -116,8 +116,17 @@ pub struct DartConnectHandler {
     /// `connect_failed` for timeouts, so refused connections / TLS failures are detected
     /// when the next attempt starts.
     pending: Option<(SocketAddr, Option<String>)>,
+    /// consecutive failed attempts since the last successful connection
+    failures: u32,
+    /// `Some(timeout)` when a Dart `ConnectionPolicy` is installed
+    callback: Option<Duration>,
     port: DartPort,
     id: i64,
+}
+
+pub mod conn_request {
+    pub const NEXT: u8 = 0;
+    pub const DISCONNECTED: u8 = 1;
 }
 
 impl DartConnectHandler {
@@ -152,6 +161,10 @@ impl DartConnectHandler {
             last_delay: None,
             reconnect_delay: Duration::from_millis(dto.connect_strategy.reconnect_delay_ms),
             pending: None,
+            failures: 0,
+            callback: dto
+                .connection_callback
+                .then(|| Duration::from_millis(dto.callback_timeout_ms)),
             port,
             id,
         }))
@@ -184,13 +197,129 @@ impl ClientConnectionHandler for DartConnectHandler {
 
     fn disconnected(&mut self, addr: SocketAddr, hostname: Option<&str>) -> Duration {
         self.event(conn_event::DISCONNECTED, Some(addr), hostname);
+        if self.callback.is_some() {
+            let mut w = crate::codec::Writer::with_capacity(32);
+            w.u8(conn_request::DISCONNECTED);
+            w.zeros(3);
+            w.blob(format!("{addr}|{}", hostname.unwrap_or("")).as_bytes());
+            if let Some(reply) = self.request(w.finish()) {
+                if reply.status == 2 {
+                    if let Some(x) = reply.data.get(0..8) {
+                        return Duration::from_millis(u64::from_le_bytes(x.try_into().unwrap()));
+                    }
+                }
+            }
+        }
         self.reconnect_delay
     }
 
     fn next(&mut self) -> std::result::Result<ConnectionInfo, Duration> {
         if let Some((addr, host)) = self.pending.take() {
+            self.failures += 1;
             self.event(conn_event::CONNECT_FAILED, Some(addr), host.as_deref());
         }
+        if let Some(decision) = self.ask_next() {
+            return decision;
+        }
+        self.native_next()
+    }
+
+    fn connecting(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        if let Some((a, h)) = self.pending.take() {
+            self.failures += 1;
+            self.event(conn_event::CONNECT_FAILED, Some(a), h.as_deref());
+        }
+        self.pending = Some((addr, hostname.map(str::to_string)));
+        self.event(conn_event::CONNECTING, Some(addr), hostname);
+    }
+
+    fn connect_failed(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        self.pending = None;
+        self.failures += 1;
+        self.event(conn_event::CONNECT_FAILED, Some(addr), hostname);
+    }
+
+    fn connected(&mut self, addr: SocketAddr, hostname: Option<&str>) {
+        self.pending = None;
+        self.failures = 0;
+        self.next = 0;
+        self.last_delay = None;
+        self.event(conn_event::CONNECTED, Some(addr), hostname);
+    }
+
+    fn resolution_failed(&mut self, host_name: &str) {
+        self.event(conn_event::RESOLUTION_FAILED, None, Some(host_name));
+    }
+}
+
+impl DartConnectHandler {
+    fn request(&self, payload: Vec<u8>) -> Option<crate::core::Reply> {
+        let timeout = self.callback?;
+        crate::core::request_sync(
+            self.port,
+            msg::CONNECTION_REQUEST,
+            self.id,
+            payload,
+            timeout,
+        )
+    }
+
+    /// `u8 NEXT, u8[3], u32 consecutive failures, u32 native next index, u32 endpoint count`
+    /// Reply: status 1 = connect (JSON `ConnectDecisionDto`), 2 = wait (`u64 ms`),
+    /// anything else = native policy.
+    fn ask_next(&mut self) -> Option<std::result::Result<ConnectionInfo, Duration>> {
+        self.callback?;
+        let mut w = crate::codec::Writer::with_capacity(16);
+        w.u8(conn_request::NEXT);
+        w.zeros(3);
+        w.u32(self.failures);
+        w.u32(self.next as u32);
+        w.u32(self.endpoints.len() as u32);
+        let reply = self.request(w.finish())?;
+        match reply.status {
+            1 => {
+                let text = std::str::from_utf8(&reply.data).ok()?;
+                let d: crate::config::ConnectDecisionDto = match crate::config::parse(text) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!("invalid connection decision from Dart: {}", e.message);
+                        return None;
+                    }
+                };
+                let mut info = ConnectionInfo::new(Endpoint::from(d.endpoint));
+                if let Some(t) = d.timeout_ms.map(Duration::from_millis).or(self.timeout) {
+                    info.set_timeout(t);
+                }
+                let local = match d.local_endpoint.as_deref().map(socket_addr) {
+                    Some(Ok(x)) => Some(x),
+                    Some(Err(_)) => None,
+                    None => self.local,
+                };
+                if let Some(l) = local {
+                    info.set_local_endpoint(l);
+                }
+                let master = match d.master_address.map(crate::config::address) {
+                    Some(Ok(x)) => Some(x),
+                    _ => self.master_address,
+                };
+                if let Some(a) = master {
+                    info.set_master_address(a);
+                }
+                Some(Ok(info))
+            }
+            2 => {
+                let ms = reply
+                    .data
+                    .get(0..8)
+                    .map(|x| u64::from_le_bytes(x.try_into().unwrap()))
+                    .unwrap_or(1000);
+                Some(Err(Duration::from_millis(ms)))
+            }
+            _ => None,
+        }
+    }
+
+    fn native_next(&mut self) -> std::result::Result<ConnectionInfo, Duration> {
         match self.endpoints.get(self.next) {
             None => {
                 self.next = 0;
@@ -220,30 +349,6 @@ impl ClientConnectionHandler for DartConnectHandler {
             }
         }
     }
-
-    fn connecting(&mut self, addr: SocketAddr, hostname: Option<&str>) {
-        if let Some((a, h)) = self.pending.take() {
-            self.event(conn_event::CONNECT_FAILED, Some(a), h.as_deref());
-        }
-        self.pending = Some((addr, hostname.map(str::to_string)));
-        self.event(conn_event::CONNECTING, Some(addr), hostname);
-    }
-
-    fn connect_failed(&mut self, addr: SocketAddr, hostname: Option<&str>) {
-        self.pending = None;
-        self.event(conn_event::CONNECT_FAILED, Some(addr), hostname);
-    }
-
-    fn connected(&mut self, addr: SocketAddr, hostname: Option<&str>) {
-        self.pending = None;
-        self.next = 0;
-        self.last_delay = None;
-        self.event(conn_event::CONNECTED, Some(addr), hostname);
-    }
-
-    fn resolution_failed(&mut self, host_name: &str) {
-        self.event(conn_event::RESOLUTION_FAILED, None, Some(host_name));
-    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -272,8 +377,10 @@ pub fn task_error_sub(e: &TaskError) -> i64 {
     }
 }
 
+/// Task errors carry the `Debug` rendering of the library error as detail, e.g.
+/// `Link(Stdio(ConnectionReset))` or `MalformedResponse(InsufficientBytes)`.
 pub fn task_error(e: TaskError) -> Error {
-    Error::with_sub(err::TASK, task_error_sub(&e), e.to_string())
+    Error::with_sub(err::TASK, task_error_sub(&e), e.to_string()).detail(format!("{e:?}"))
 }
 
 pub fn command_error(e: CommandError) -> Error {
@@ -290,7 +397,7 @@ pub fn command_error(e: CommandError) -> Error {
                 CommandResponseError::ObjectValueMismatch => 5,
                 CommandResponseError::Request(_) => unreachable!(),
             };
-            Error::with_sub(err::COMMAND, sub, r.to_string())
+            Error::with_sub(err::COMMAND, sub, r.to_string()).detail(format!("{r:?}"))
         }
     }
 }
@@ -308,7 +415,8 @@ pub fn write_error(e: WriteError) -> Error {
 
 pub fn time_sync_error(e: TimeSyncError) -> Error {
     let msg = e.to_string();
-    match e {
+    let detail = format!("{e:?}");
+    let e2 = match e {
         TimeSyncError::Task(t) => task_error(t),
         TimeSyncError::ClockRollback => Error::with_sub(err::TIME_SYNC, 1, msg),
         TimeSyncError::SystemTimeNotUnix => Error::with_sub(err::TIME_SYNC, 2, msg),
@@ -321,7 +429,8 @@ pub fn time_sync_error(e: TimeSyncError) -> Error {
         TimeSyncError::IinError(iin2) => {
             Error::with_sub(err::TIME_SYNC, 7 | ((iin2.value as i64) << 8), msg)
         }
-    }
+    };
+    e2.detail(detail)
 }
 
 pub fn file_status_u8(s: dnp3::app::FileStatus) -> u8 {
@@ -349,7 +458,8 @@ pub fn file_status_u8(s: dnp3::app::FileStatus) -> u8 {
 
 pub fn file_error(e: FileError) -> Error {
     let msg = e.to_string();
-    match e {
+    let detail = format!("{e:?}");
+    let e2 = match e {
         FileError::TaskError(t) => task_error(t),
         FileError::BadResponse => Error::with_sub(err::FILE, 1, msg),
         FileError::BadStatus(s) => {
@@ -360,7 +470,8 @@ pub fn file_error(e: FileError) -> Error {
         FileError::BadBlockNum => Error::with_sub(err::FILE, 5, msg),
         FileError::AbortByUser => Error::with_sub(err::FILE, 6, msg),
         FileError::MaxLengthExceeded => Error::with_sub(err::FILE, 7, msg),
-    }
+    };
+    e2.detail(detail)
 }
 
 pub fn association_error(e: AssociationError) -> Error {

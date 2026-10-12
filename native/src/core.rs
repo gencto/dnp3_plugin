@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::dart::{post, DartPort, Payload};
 
 /// Version of the binary/C ABI. Dart refuses to work with a library whose version differs.
-pub const ABI_VERSION: i64 = 1;
+pub const ABI_VERSION: i64 = 2;
 
 /// Message kinds posted to Dart ports. Mirrored in `lib/src/native/protocol.dart`.
 pub mod msg {
@@ -24,11 +24,13 @@ pub mod msg {
     pub const MEASUREMENTS: i64 = 20;
     pub const ASSOCIATION_INFO: i64 = 21;
     pub const FILE_READ: i64 = 22;
+    pub const FILE_OPEN_REQUEST: i64 = 23;
     pub const CONTROL_REQUEST: i64 = 30;
     pub const APPLICATION_REQUEST: i64 = 31;
     pub const OUTSTATION_INFO: i64 = 32;
     pub const OUTSTATION_EVENT: i64 = 33;
     pub const MASTER_SERVER_REQUEST: i64 = 40;
+    pub const CONNECTION_REQUEST: i64 = 41;
 }
 
 /// Error codes. 0 is success. Mirrored in `lib/src/native/protocol.dart`.
@@ -60,6 +62,8 @@ pub struct Error {
     pub code: i64,
     /// optional sub-code, e.g. a `CommandStatus` or `TaskError` discriminant
     pub sub: i64,
+    /// structured detail of the underlying library error (e.g. the link or parse error)
+    pub detail: String,
     pub message: String,
 }
 
@@ -68,6 +72,7 @@ impl Error {
         Self {
             code,
             sub: 0,
+            detail: String::new(),
             message: message.into(),
         }
     }
@@ -76,8 +81,19 @@ impl Error {
         Self {
             code,
             sub,
+            detail: String::new(),
             message: message.into(),
         }
+    }
+
+    pub fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = detail.into().replace('|', "/");
+        self
+    }
+
+    /// `sub|detail|message` (format of error payloads posted to Dart)
+    pub fn encode(&self) -> String {
+        format!("{}|{}|{}", self.sub, self.detail, self.message)
     }
 
     pub fn invalid_handle(id: u64) -> Self {
@@ -200,13 +216,13 @@ impl Completion {
     }
 
     pub fn fail(self, e: Error) {
-        // error results carry: b = error code, payload = "sub|message"
+        // error results carry: b = error code, payload = "sub|detail|message"
         post(
             self.port,
             msg::RESULT,
             self.request,
             e.code,
-            Payload::Str(format!("{}|{}", e.sub, e.message)),
+            Payload::Str(e.encode()),
         );
     }
 

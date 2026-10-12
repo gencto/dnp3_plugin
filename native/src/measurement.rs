@@ -309,11 +309,79 @@ pub fn encode_attribute(w: &mut Writer, set: AttrSet, variation: u8, value: &Att
     }
 }
 
+/// Flow control between the read handler and Dart: at most `window` fragments may be
+/// posted but not yet acknowledged (`dnp3_association_ack`). When the window is full the
+/// read handler suspends `end_fragment`, which stops the master from reading the channel
+/// (TCP back-pressure towards the outstation), until Dart catches up or `timeout` expires.
+pub struct Credits {
+    in_flight: std::sync::atomic::AtomicI64,
+    window: std::sync::atomic::AtomicI64,
+    timeout: std::time::Duration,
+    notify: tokio::sync::Notify,
+}
+
+impl Credits {
+    pub fn new(window: u32, timeout: std::time::Duration) -> Self {
+        Self {
+            in_flight: Default::default(),
+            window: std::sync::atomic::AtomicI64::new(window as i64),
+            timeout,
+            notify: tokio::sync::Notify::new(),
+        }
+    }
+
+    pub fn ack(&self, n: i64) {
+        use std::sync::atomic::Ordering;
+        let prev = self.in_flight.fetch_sub(n, Ordering::AcqRel);
+        if prev - n < 0 {
+            self.in_flight.store(0, Ordering::Release);
+        }
+        self.notify.notify_waiters();
+    }
+
+    /// Release every waiter permanently (association removed)
+    pub fn close(&self) {
+        self.window
+            .store(i64::MAX, std::sync::atomic::Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    pub fn in_flight(&self) -> i64 {
+        self.in_flight.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn full(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        self.in_flight.load(Ordering::Acquire) >= self.window.load(Ordering::Acquire)
+    }
+
+    async fn wait(self: Arc<Self>) {
+        let deadline = tokio::time::Instant::now() + self.timeout;
+        loop {
+            let notified = self.notify.notified();
+            if !self.full() {
+                return;
+            }
+            if tokio::time::timeout_at(deadline, notified).await.is_err() {
+                tracing::warn!(
+                    "measurement consumer did not acknowledge within {:?}; resuming",
+                    self.timeout
+                );
+                return;
+            }
+        }
+    }
+}
+
 /// Where completed fragments go
 #[derive(Clone)]
 pub enum Sink {
     /// Post each fragment to a Dart port as `[MEASUREMENTS, id, 0, bytes]`
-    Port { port: DartPort, id: i64 },
+    Port {
+        port: DartPort,
+        id: i64,
+        credits: Option<Arc<Credits>>,
+    },
     /// Accumulate length-prefixed fragments (used by `read_with_handler`)
     Collect(Arc<Mutex<Vec<u8>>>),
 }
@@ -340,10 +408,23 @@ impl MeasurementHandler {
             .get_or_insert_with(|| FragmentBuilder::new(256, 255, None))
     }
 
-    fn emit(&mut self, data: Vec<u8>) {
+    /// Returns the flow control to wait on, if the window is now full
+    fn emit(&mut self, data: Vec<u8>) -> Option<Arc<Credits>> {
         match &self.sink {
-            Sink::Port { port, id } => {
-                post(*port, msg::MEASUREMENTS, *id, 0, Payload::Bytes(data));
+            Sink::Port { port, id, credits } => {
+                if let Some(c) = credits {
+                    c.in_flight
+                        .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                }
+                let posted = post(*port, msg::MEASUREMENTS, *id, 0, Payload::Bytes(data));
+                match credits {
+                    Some(c) if !posted => {
+                        c.ack(1);
+                        None
+                    }
+                    Some(c) if c.full() => Some(c.clone()),
+                    _ => None,
+                }
             }
             Sink::Collect(acc) => {
                 let mut acc = acc.lock().unwrap();
@@ -353,6 +434,7 @@ impl MeasurementHandler {
                 while acc.len() % 8 != 0 {
                     acc.push(0);
                 }
+                None
             }
         }
     }
@@ -385,7 +467,9 @@ impl ReadHandler for MeasurementHandler {
         if let Some(b) = self.current.take() {
             let data = b.finish();
             self.last_size = data.len();
-            self.emit(data);
+            if let Some(credits) = self.emit(data) {
+                return MaybeAsync::asynchronous(credits.wait());
+            }
         }
         MaybeAsync::ready(())
     }

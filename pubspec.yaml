@@ -3,7 +3,7 @@ description: >-
   Complete DNP3 (IEEE 1815) master & outstation for Dart and Flutter, built on the
   stepfunc `dnp3` Rust library. Zero-copy measurement delivery, isolate-friendly handles,
   batched database transactions. Android, iOS, macOS, Linux and Windows.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/gencto/dnp3_plugin
 publish_to: none
 
