@@ -11,6 +11,9 @@ contain breaking changes, which are marked **Breaking**. New entries go under
   examples table); the detailed guides moved to `doc/master.md`, `doc/outstation.md`,
   `doc/architecture.md` and `doc/benchmarks.md`.
 * New `example/example.dart`: a self-contained outstation + master demo.
+* Documented the flyweight accessors (`valueAt`, `flagsAt`, `timeAt`, ...) inherited by the
+  measurement blocks; `analysis_options.yaml` sets the formatter page width to 110 so
+  `dart format` and pub.dev's analysis agree.
 * Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and pull
   request templates.
 

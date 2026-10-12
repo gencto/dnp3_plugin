@@ -363,6 +363,9 @@ final class _CommandHeader {
 final class RequestHeaders {
   final ByteWriter _w = ByteWriter(64);
 
+  /// Empty header list; add headers with the builder methods below.
+  RequestHeaders();
+
   /// Adds an all-objects header (qualifier 0x06)
   RequestHeaders allObjects(Variation v) => _read(ReadHeader.allObjects(v));
 
