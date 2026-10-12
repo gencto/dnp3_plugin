@@ -63,9 +63,6 @@ final class NativeRuntime {
   /// Native port of this isolate (used as destination for results and events)
   int get port => _port.sendPort.nativePort;
 
-  /// `SendPort` of this isolate's dispatcher
-  SendPort get sendPort => _port.sendPort;
-
   void _updateKeepAlive() {
     _port.keepIsolateAlive = _pending.isNotEmpty || _targets.isNotEmpty;
   }
@@ -209,4 +206,4 @@ T withNativeString<T>(String s, T Function(Pointer<Uint8> ptr, int len) f) {
 String toJson(Object? value) => jsonEncode(value);
 
 /// Utility to read the native version string
-String nativeVersion_() => dnp3_version().cast<Utf8>().toDartString();
+String nativeVersionString() => dnp3_version().cast<Utf8>().toDartString();

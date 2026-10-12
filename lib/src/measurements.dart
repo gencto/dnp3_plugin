@@ -366,12 +366,8 @@ final class MeasurementFragment {
   /// by the Dart VM (external typed data).
   final Uint8List bytes;
   final ByteData _d;
-  final int _base;
 
-  MeasurementFragment._(this.bytes, this._d, this._base);
-
-  factory MeasurementFragment(Uint8List bytes) =>
-      MeasurementFragment._(bytes, ByteData.sublistView(bytes), 0);
+  MeasurementFragment(this.bytes) : _d = ByteData.sublistView(bytes);
 
   /// Split the concatenated fragments returned by `Association.readWithHandler`
   static List<MeasurementFragment> splitCollection(Uint8List data) {
@@ -388,27 +384,27 @@ final class MeasurementFragment {
     return out;
   }
 
-  int get version => _d.getUint8(_base);
+  int get version => _d.getUint8(0);
 
   ReadType get readType {
-    final r = _d.getUint8(_base + 1);
+    final r = _d.getUint8(1);
     return r < 4 ? ReadType.values[r] : ReadType.local;
   }
 
-  bool get isUnsolicited => _d.getUint8(_base + 2) == 1;
-  int get _control => _d.getUint8(_base + 3);
+  bool get isUnsolicited => _d.getUint8(2) == 1;
+  int get _control => _d.getUint8(3);
   bool get fir => _control & 0x80 != 0;
   bool get fin => _control & 0x40 != 0;
   bool get con => _control & 0x20 != 0;
   bool get uns => _control & 0x10 != 0;
   int get sequence => _control & 0x0F;
-  Iin get iin => Iin(_d.getUint8(_base + 4), _d.getUint8(_base + 5));
-  int get blockCount => _d.getUint16(_base + 6, _le);
-  int get length => _d.getUint32(_base + 8, _le);
+  Iin get iin => Iin(_d.getUint8(4), _d.getUint8(5));
+  int get blockCount => _d.getUint16(6, _le);
+  int get length => _d.getUint32(8, _le);
 
   /// Lazily decoded object headers of this fragment
   Iterable<MeasurementBlock> get blocks sync* {
-    var pos = _base + 16;
+    var pos = 16;
     final n = blockCount;
     for (var i = 0; i < n; i++) {
       final block = MeasurementBlock._create(_d, pos);
@@ -527,6 +523,64 @@ sealed class _FixedBlock<T> extends MeasurementBlock with ListMixin<T> {
   int indexAt(int i) => _d.getUint16(_p + i * _size, _le);
 }
 
+// Record decoders shared by the blocks and `Database.getX` (not exported)
+
+BinaryInput readBinaryInput(ByteData d, int o) => BinaryInput(
+  d.getUint16(o, _le),
+  d.getUint8(o + 2) != 0,
+  flags: Flags(d.getUint8(o + 3)),
+  time: Dnp3Time.decode(d.getUint8(o + 4), d.getUint64(o + 8, _le)),
+);
+
+DoubleBitBinaryInput readDoubleBitBinaryInput(ByteData d, int o) => DoubleBitBinaryInput(
+  d.getUint16(o, _le),
+  DoubleBit.fromCode(d.getUint8(o + 2)),
+  flags: Flags(d.getUint8(o + 3)),
+  time: Dnp3Time.decode(d.getUint8(o + 4), d.getUint64(o + 8, _le)),
+);
+
+BinaryOutputStatus readBinaryOutputStatus(ByteData d, int o) => BinaryOutputStatus(
+  d.getUint16(o, _le),
+  d.getUint8(o + 2) != 0,
+  flags: Flags(d.getUint8(o + 3)),
+  time: Dnp3Time.decode(d.getUint8(o + 4), d.getUint64(o + 8, _le)),
+);
+
+Counter readCounter(ByteData d, int o) => Counter(
+  d.getUint16(o, _le),
+  d.getUint32(o + 4, _le),
+  flags: Flags(d.getUint8(o + 2)),
+  time: Dnp3Time.decode(d.getUint8(o + 3), d.getUint64(o + 8, _le)),
+);
+
+FrozenCounter readFrozenCounter(ByteData d, int o) => FrozenCounter(
+  d.getUint16(o, _le),
+  d.getUint32(o + 4, _le),
+  flags: Flags(d.getUint8(o + 2)),
+  time: Dnp3Time.decode(d.getUint8(o + 3), d.getUint64(o + 8, _le)),
+);
+
+AnalogInput readAnalogInput(ByteData d, int o) => AnalogInput(
+  d.getUint16(o, _le),
+  d.getFloat64(o + 8, _le),
+  flags: Flags(d.getUint8(o + 2)),
+  time: Dnp3Time.decode(d.getUint8(o + 3), d.getUint64(o + 16, _le)),
+);
+
+FrozenAnalogInput readFrozenAnalogInput(ByteData d, int o) => FrozenAnalogInput(
+  d.getUint16(o, _le),
+  d.getFloat64(o + 8, _le),
+  flags: Flags(d.getUint8(o + 2)),
+  time: Dnp3Time.decode(d.getUint8(o + 3), d.getUint64(o + 16, _le)),
+);
+
+AnalogOutputStatus readAnalogOutputStatus(ByteData d, int o) => AnalogOutputStatus(
+  d.getUint16(o, _le),
+  d.getFloat64(o + 8, _le),
+  flags: Flags(d.getUint8(o + 2)),
+  time: Dnp3Time.decode(d.getUint8(o + 3), d.getUint64(o + 16, _le)),
+);
+
 /// Shared layout of binary-like records: `u16 index, u8 value, u8 flags, u8 tk, pad, u64 time`
 sealed class _BinaryLike<T> extends _FixedBlock<T> {
   _BinaryLike(ByteData d, int h) : super(d, h, 16);
@@ -542,12 +596,7 @@ final class BinaryInputBlock extends _BinaryLike<BinaryInput> {
   BinaryInputBlock._(super.d, super.h);
   bool valueAt(int i) => _rawValueAt(i) != 0;
   @override
-  BinaryInput _decode(int o) => BinaryInput(
-    _d.getUint16(o, _le),
-    _d.getUint8(o + 2) != 0,
-    flags: Flags(_d.getUint8(o + 3)),
-    time: Dnp3Time.decode(_d.getUint8(o + 4), _d.getUint64(o + 8, _le)),
-  );
+  BinaryInput _decode(int o) => readBinaryInput(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.binaryInputs(this);
 }
@@ -556,12 +605,7 @@ final class DoubleBitBinaryInputBlock extends _BinaryLike<DoubleBitBinaryInput> 
   DoubleBitBinaryInputBlock._(super.d, super.h);
   DoubleBit valueAt(int i) => DoubleBit.fromCode(_rawValueAt(i));
   @override
-  DoubleBitBinaryInput _decode(int o) => DoubleBitBinaryInput(
-    _d.getUint16(o, _le),
-    DoubleBit.fromCode(_d.getUint8(o + 2)),
-    flags: Flags(_d.getUint8(o + 3)),
-    time: Dnp3Time.decode(_d.getUint8(o + 4), _d.getUint64(o + 8, _le)),
-  );
+  DoubleBitBinaryInput _decode(int o) => readDoubleBitBinaryInput(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.doubleBitBinaryInputs(this);
 }
@@ -570,12 +614,7 @@ final class BinaryOutputStatusBlock extends _BinaryLike<BinaryOutputStatus> {
   BinaryOutputStatusBlock._(super.d, super.h);
   bool valueAt(int i) => _rawValueAt(i) != 0;
   @override
-  BinaryOutputStatus _decode(int o) => BinaryOutputStatus(
-    _d.getUint16(o, _le),
-    _d.getUint8(o + 2) != 0,
-    flags: Flags(_d.getUint8(o + 3)),
-    time: Dnp3Time.decode(_d.getUint8(o + 4), _d.getUint64(o + 8, _le)),
-  );
+  BinaryOutputStatus _decode(int o) => readBinaryOutputStatus(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.binaryOutputStatuses(this);
 }
@@ -593,12 +632,7 @@ sealed class _CounterLike<T> extends _FixedBlock<T> {
 final class CounterBlock extends _CounterLike<Counter> {
   CounterBlock._(super.d, super.h);
   @override
-  Counter _decode(int o) => Counter(
-    _d.getUint16(o, _le),
-    _d.getUint32(o + 4, _le),
-    flags: Flags(_d.getUint8(o + 2)),
-    time: Dnp3Time.decode(_d.getUint8(o + 3), _d.getUint64(o + 8, _le)),
-  );
+  Counter _decode(int o) => readCounter(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.counters(this);
 }
@@ -606,12 +640,7 @@ final class CounterBlock extends _CounterLike<Counter> {
 final class FrozenCounterBlock extends _CounterLike<FrozenCounter> {
   FrozenCounterBlock._(super.d, super.h);
   @override
-  FrozenCounter _decode(int o) => FrozenCounter(
-    _d.getUint16(o, _le),
-    _d.getUint32(o + 4, _le),
-    flags: Flags(_d.getUint8(o + 2)),
-    time: Dnp3Time.decode(_d.getUint8(o + 3), _d.getUint64(o + 8, _le)),
-  );
+  FrozenCounter _decode(int o) => readFrozenCounter(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.frozenCounters(this);
 }
@@ -629,12 +658,7 @@ sealed class _AnalogLike<T> extends _FixedBlock<T> {
 final class AnalogInputBlock extends _AnalogLike<AnalogInput> {
   AnalogInputBlock._(super.d, super.h);
   @override
-  AnalogInput _decode(int o) => AnalogInput(
-    _d.getUint16(o, _le),
-    _d.getFloat64(o + 8, _le),
-    flags: Flags(_d.getUint8(o + 2)),
-    time: Dnp3Time.decode(_d.getUint8(o + 3), _d.getUint64(o + 16, _le)),
-  );
+  AnalogInput _decode(int o) => readAnalogInput(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.analogInputs(this);
 }
@@ -642,12 +666,7 @@ final class AnalogInputBlock extends _AnalogLike<AnalogInput> {
 final class FrozenAnalogInputBlock extends _AnalogLike<FrozenAnalogInput> {
   FrozenAnalogInputBlock._(super.d, super.h);
   @override
-  FrozenAnalogInput _decode(int o) => FrozenAnalogInput(
-    _d.getUint16(o, _le),
-    _d.getFloat64(o + 8, _le),
-    flags: Flags(_d.getUint8(o + 2)),
-    time: Dnp3Time.decode(_d.getUint8(o + 3), _d.getUint64(o + 16, _le)),
-  );
+  FrozenAnalogInput _decode(int o) => readFrozenAnalogInput(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.frozenAnalogInputs(this);
 }
@@ -655,12 +674,7 @@ final class FrozenAnalogInputBlock extends _AnalogLike<FrozenAnalogInput> {
 final class AnalogOutputStatusBlock extends _AnalogLike<AnalogOutputStatus> {
   AnalogOutputStatusBlock._(super.d, super.h);
   @override
-  AnalogOutputStatus _decode(int o) => AnalogOutputStatus(
-    _d.getUint16(o, _le),
-    _d.getFloat64(o + 8, _le),
-    flags: Flags(_d.getUint8(o + 2)),
-    time: Dnp3Time.decode(_d.getUint8(o + 3), _d.getUint64(o + 16, _le)),
-  );
+  AnalogOutputStatus _decode(int o) => readAnalogOutputStatus(_d, o);
   @override
   void accept(MeasurementVisitor v) => v.analogOutputStatuses(this);
 }

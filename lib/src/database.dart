@@ -554,82 +554,25 @@ final class Database {
 
   ByteData get _sd => ByteData.sublistView(_scratch);
 
-  BinaryInput? getBinaryInput(int index) {
-    if (_get(PointKind.binaryInput, index) == 0) return null;
-    final d = _sd;
-    return BinaryInput(
-      index,
-      d.getUint8(2) != 0,
-      flags: Flags(d.getUint8(3)),
-      time: Dnp3Time.decode(d.getUint8(4), d.getUint64(8, Endian.little)),
-    );
-  }
+  BinaryInput? getBinaryInput(int index) =>
+      _get(PointKind.binaryInput, index) == 0 ? null : readBinaryInput(_sd, 0);
 
-  DoubleBitBinaryInput? getDoubleBitBinaryInput(int index) {
-    if (_get(PointKind.doubleBitBinaryInput, index) == 0) return null;
-    final d = _sd;
-    return DoubleBitBinaryInput(
-      index,
-      DoubleBit.fromCode(d.getUint8(2)),
-      flags: Flags(d.getUint8(3)),
-      time: Dnp3Time.decode(d.getUint8(4), d.getUint64(8, Endian.little)),
-    );
-  }
+  DoubleBitBinaryInput? getDoubleBitBinaryInput(int index) =>
+      _get(PointKind.doubleBitBinaryInput, index) == 0 ? null : readDoubleBitBinaryInput(_sd, 0);
 
-  BinaryOutputStatus? getBinaryOutputStatus(int index) {
-    if (_get(PointKind.binaryOutputStatus, index) == 0) return null;
-    final d = _sd;
-    return BinaryOutputStatus(
-      index,
-      d.getUint8(2) != 0,
-      flags: Flags(d.getUint8(3)),
-      time: Dnp3Time.decode(d.getUint8(4), d.getUint64(8, Endian.little)),
-    );
-  }
+  BinaryOutputStatus? getBinaryOutputStatus(int index) =>
+      _get(PointKind.binaryOutputStatus, index) == 0 ? null : readBinaryOutputStatus(_sd, 0);
 
-  Counter? getCounter(int index) {
-    if (_get(PointKind.counter, index) == 0) return null;
-    final d = _sd;
-    return Counter(
-      index,
-      d.getUint32(4, Endian.little),
-      flags: Flags(d.getUint8(2)),
-      time: Dnp3Time.decode(d.getUint8(3), d.getUint64(8, Endian.little)),
-    );
-  }
+  Counter? getCounter(int index) => _get(PointKind.counter, index) == 0 ? null : readCounter(_sd, 0);
 
-  FrozenCounter? getFrozenCounter(int index) {
-    if (_get(PointKind.frozenCounter, index) == 0) return null;
-    final d = _sd;
-    return FrozenCounter(
-      index,
-      d.getUint32(4, Endian.little),
-      flags: Flags(d.getUint8(2)),
-      time: Dnp3Time.decode(d.getUint8(3), d.getUint64(8, Endian.little)),
-    );
-  }
+  FrozenCounter? getFrozenCounter(int index) =>
+      _get(PointKind.frozenCounter, index) == 0 ? null : readFrozenCounter(_sd, 0);
 
-  AnalogInput? getAnalogInput(int index) {
-    if (_get(PointKind.analogInput, index) == 0) return null;
-    final d = _sd;
-    return AnalogInput(
-      index,
-      d.getFloat64(8, Endian.little),
-      flags: Flags(d.getUint8(2)),
-      time: Dnp3Time.decode(d.getUint8(3), d.getUint64(16, Endian.little)),
-    );
-  }
+  AnalogInput? getAnalogInput(int index) =>
+      _get(PointKind.analogInput, index) == 0 ? null : readAnalogInput(_sd, 0);
 
-  AnalogOutputStatus? getAnalogOutputStatus(int index) {
-    if (_get(PointKind.analogOutputStatus, index) == 0) return null;
-    final d = _sd;
-    return AnalogOutputStatus(
-      index,
-      d.getFloat64(8, Endian.little),
-      flags: Flags(d.getUint8(2)),
-      time: Dnp3Time.decode(d.getUint8(3), d.getUint64(16, Endian.little)),
-    );
-  }
+  AnalogOutputStatus? getAnalogOutputStatus(int index) =>
+      _get(PointKind.analogOutputStatus, index) == 0 ? null : readAnalogOutputStatus(_sd, 0);
 
   Uint8List? getOctetString(int index) {
     if (_get(PointKind.octetString, index) == 0) return null;
@@ -644,7 +587,7 @@ final class Database {
     RangeError.checkValueInInterval(stop, 0, 0xFFFF, 'stop');
     final lenPtr = _lenSlot;
     final ptr = dnp3_outstation_get_range(handle, type.code, start, stop, lenPtr);
-    if (ptr == nullptr) throw lastError(-ErrorCode.invalidArgument);
+    if (ptr == nullptr) throw lastError(-lenPtr.value); // error code in the length slot
     final len = lenPtr.value;
     final bytes = ptr.asTypedList(len, finalizer: dnp3BufferFreePtr);
     return MeasurementFragment(bytes).blocks.first;

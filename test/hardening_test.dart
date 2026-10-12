@@ -89,6 +89,28 @@ void main() {
     }
   });
 
+  test('task failures keep the IIN2 byte in association events', () async {
+    final pair = await Pair.create(information: true);
+    final events = <AssociationEvent>[];
+    pair.association.information.listen(events.add);
+    try {
+      // cold restart is not supported by default: rejected with IIN2.0 (no func code support)
+      await expectLater(pair.association.coldRestart(), throwsA(isA<TaskException>()));
+      await eventually(() => events.any((e) => e.error == TaskError.rejectedByIin2));
+      final failed = events.firstWhere((e) => e.error == TaskError.rejectedByIin2);
+      expect(failed.iin2 & 0x01, 1);
+    } finally {
+      pair.close();
+    }
+  });
+
+  test('a range read on a destroyed outstation reports an invalid handle', () async {
+    final pair = await Pair.create();
+    final db = pair.outstation.database;
+    pair.close();
+    expect(() => db.getRange(PointType.counter, 0, 9), throwsA(isA<InvalidHandleException>()));
+  });
+
   test('closing the isolate runtime completes streams and fails later calls', () async {
     final pair = await Pair.create();
     final done = Completer<void>();

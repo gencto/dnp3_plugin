@@ -354,6 +354,9 @@ final class AssociationEvent {
   final FunctionCode? functionCode;
   final int sequence;
   final TaskError? error;
+
+  /// IIN2 byte returned by the outstation when [error] is [TaskError.rejectedByIin2]
+  final int iin2;
   final bool isDuplicate;
 
   const AssociationEvent(
@@ -362,6 +365,7 @@ final class AssociationEvent {
     this.functionCode,
     this.sequence = 0,
     this.error,
+    this.iin2 = 0,
     this.isDuplicate = false,
   });
 
@@ -385,6 +389,8 @@ final class AssociationEvent {
               ? FunctionCode.fromCode((v >> 8) & 0xFF)
               : null,
           error: TaskError.fromCode((v >> 24) & 0xFF),
+          // the task error sub-code carries the IIN2 byte in its bits 8..15
+          iin2: (v >> 32) & 0xFF,
         );
       case AssociationEventType.unsolicitedResponse:
         return AssociationEvent(t, isDuplicate: v & 1 != 0, sequence: (v >> 16) & 0xFF);

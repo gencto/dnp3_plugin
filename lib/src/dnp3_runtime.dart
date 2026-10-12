@@ -25,7 +25,7 @@ abstract final class Dnp3 {
   /// Version of the native bridge and of the underlying `dnp3` crate
   static String get nativeVersion {
     NativeRuntime.ensureNative();
-    return nativeVersion_();
+    return nativeVersionString();
   }
 
   /// Forward native log records to [logger] (in the calling isolate).

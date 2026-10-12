@@ -595,7 +595,8 @@ pub unsafe extern "C" fn dnp3_outstation_get(
 }
 
 /// Returns a native buffer (free with `dnp3_buffer_free`) containing one encoded fragment
-/// with a single block of all defined points in `[start, stop]`.
+/// with a single block of all defined points in `[start, stop]`. On failure returns null,
+/// stores the error code in `out_len` and sets the last error.
 #[no_mangle]
 pub unsafe extern "C" fn dnp3_outstation_get_range(
     id: u64,
@@ -604,19 +605,18 @@ pub unsafe extern "C" fn dnp3_outstation_get_range(
     stop: u16,
     out_len: *mut usize,
 ) -> *mut u8 {
-    match std::panic::catch_unwind(AssertUnwindSafe(|| {
+    let error = match std::panic::catch_unwind(AssertUnwindSafe(|| {
         outstation::get_range(id, point_type, start, stop)
     })) {
-        Ok(Ok(data)) => into_raw_buffer(data, out_len),
-        Ok(Err(e)) => {
-            set_last_error(&e);
-            std::ptr::null_mut()
-        }
-        Err(_) => {
-            set_last_error(&Error::new(err::PANIC, "panic in get_range"));
-            std::ptr::null_mut()
-        }
+        Ok(Ok(data)) => return into_raw_buffer(data, out_len),
+        Ok(Err(e)) => e,
+        Err(_) => Error::new(err::PANIC, "panic in get_range"),
+    };
+    set_last_error(&error);
+    if !out_len.is_null() {
+        *out_len = error.code.unsigned_abs() as usize;
     }
+    std::ptr::null_mut()
 }
 
 #[no_mangle]
