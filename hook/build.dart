@@ -161,7 +161,6 @@ Future<Uri> _cargoBuild(BuildInput input, CodeConfig code, String triple, String
     env['IPHONEOS_DEPLOYMENT_TARGET'] = '${code.iOS.targetVersion}.0';
   } else if (code.targetOS == OS.macOS) {
     env['MACOSX_DEPLOYMENT_TARGET'] = '${code.macOS.targetVersion}.0';
-    env['CARGO_TARGET_${envTriple}_RUSTFLAGS'] = '-C link-arg=-Wl,-install_name,@rpath/$fileName';
   }
 
   // make sure the std library for the target is installed (no-op without rustup)
