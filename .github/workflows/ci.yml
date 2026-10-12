@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust · fmt, clippy, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: cargo fmt --check
+        working-directory: native
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: native
+      - run: cargo test --locked
+        working-directory: native
+
+  dart:
+    name: Dart · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - name: Format
+        if: runner.os == 'Linux'
+        run: dart format --output=none --set-exit-if-changed -l 110 lib test hook benchmark example/master.dart example/outstation.dart example/worker_isolate.dart
+      # the build hook compiles native/ for the host
+      - run: dart test --reporter expanded --timeout 2x
+      - name: Quick benchmark
+        run: dart run benchmark/run_all.dart --quick --out bench.md
+      - name: Benchmark summary
+        shell: bash
+        run: cat bench.md >> "$GITHUB_STEP_SUMMARY"
+
+  native:
+    name: Native libraries
+    uses: ./.github/workflows/native-build.yml
+
+  flutter:
+    name: Flutter example · ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: android
+            build: apk --debug
+            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          - os: ubuntu-latest
+            platform: linux
+            build: linux --debug
+            targets: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            platform: ios
+            build: ios --debug --no-codesign
+            targets: aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          - os: macos-latest
+            platform: macos
+            build: macos --debug
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - os: windows-latest
+            platform: windows
+            build: windows --debug
+            targets: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust targets
+        shell: bash
+        run: rustup target add ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          key: flutter-${{ matrix.platform }}
+      - if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Enable native assets (no-op on Flutter versions where they are stable)
+        run: flutter config --enable-native-assets || true
+      - name: Generate platform folders
+        working-directory: example/flutter_app
+        run: flutter create --project-name dnp3_flutter_example --platforms ${{ matrix.platform }} .
+      - working-directory: example/flutter_app
+        run: flutter pub get
+      - working-directory: example/flutter_app
+        run: flutter analyze --no-fatal-infos
+      - working-directory: example/flutter_app
+        run: flutter build ${{ matrix.build }}
