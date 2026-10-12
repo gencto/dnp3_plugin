@@ -368,11 +368,11 @@ master-server mode, plus callbacks, device attributes, isolates, logging and han
 
 ## CI/CD
 
-The GitHub Actions workflows are delivered as a patch: [`ci/0001-ci-add-github-actions-workflows.patch`](ci/).
+The GitHub Actions workflows are delivered as a patch: [`ci/0001-ci-add-GitHub-Actions-workflows.patch`](ci/).
 Apply it with:
 
 ```sh
-git am ci/0001-ci-add-github-actions-workflows.patch
+git am ci/0001-ci-add-GitHub-Actions-workflows.patch
 ```
 
 It adds:
