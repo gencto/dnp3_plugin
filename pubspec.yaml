@@ -1,10 +1,16 @@
 name: dnp3
 description: >-
-  Complete DNP3 (IEEE 1815) master & outstation for Dart and Flutter, built on the
-  stepfunc `dnp3` Rust library. Zero-copy measurement delivery, isolate-friendly handles,
-  batched database transactions. Android, iOS, macOS, Linux and Windows.
+  DNP3 (IEEE 1815) master and outstation for Dart and Flutter on top of the stepfunc
+  dnp3 Rust library, with zero-copy measurements and isolate-friendly handles.
 version: 0.2.0
 repository: https://github.com/gencto/dnp3_plugin
+issue_tracker: https://github.com/gencto/dnp3_plugin/issues
+topics:
+  - dnp3
+  - scada
+  - ffi
+  - industrial
+  - protocol
 publish_to: none
 
 environment:

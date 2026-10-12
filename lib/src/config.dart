@@ -453,7 +453,7 @@ enum ControlMode {
   /// Every control is rejected with [ControlHandlerConfig.rejectStatus]
   reject,
 
-  /// Each SELECT / OPERATE is forwarded to the Dart `ControlHandler` and the protocol
+  /// Each SELECT / OPERATE is forwarded to `OutstationHandlers.onControl` and the protocol
   /// thread waits for its answer (bounded by [ControlHandlerConfig.timeout]).
   callback,
 }

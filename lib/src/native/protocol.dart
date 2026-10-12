@@ -1,7 +1,10 @@
 // Constants shared with native/src/core.rs. Keep in sync.
 
 /// ABI version expected from the native library
-const int abiVersion = 2;
+const int abiVersion = 3;
+
+/// Reply status meaning "no handler for this request" (`core::REPLY_NO_HANDLER`)
+const int replyNoHandler = -1;
 
 abstract final class Msg {
   static const int result = 1;

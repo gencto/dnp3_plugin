@@ -57,6 +57,10 @@ fn now_ms() -> u64 {
 
 /// Next fire time (epoch ms) of a freeze schedule at or after `now`; `None` when a
 /// one-shot schedule has already fired.
+/// Shortest period honoured by the FREEZE_AT_TIME scheduler. A smaller interval from a
+/// remote master is raised to this value so it cannot flood the database and Dart.
+pub const MIN_FREEZE_PERIOD_MS: u64 = 100;
+
 pub fn next_freeze_time(interval: FreezeInterval, now: u64, fired: bool) -> Option<u64> {
     let periodic = |anchor: u64, period: u64| -> u64 {
         if now <= anchor {
@@ -68,12 +72,16 @@ pub fn next_freeze_time(interval: FreezeInterval, now: u64, fired: bool) -> Opti
     match interval {
         FreezeInterval::FreezeOnceImmediately => (!fired).then_some(now),
         FreezeInterval::FreezeOnceAtTime(t) => (!fired).then_some(t.raw_value().max(now)),
-        FreezeInterval::PeriodicallyFreeze(t, period) => {
-            Some(periodic(t.raw_value(), period.max(1) as u64))
-        }
+        FreezeInterval::PeriodicallyFreeze(t, period) => Some(periodic(
+            t.raw_value(),
+            u64::from(period).max(MIN_FREEZE_PERIOD_MS),
+        )),
         FreezeInterval::PeriodicallyFreezeRelative(period) => {
             let hour_start = now - now % 3_600_000;
-            Some(periodic(hour_start, period.max(1) as u64))
+            Some(periodic(
+                hour_start,
+                u64::from(period).max(MIN_FREEZE_PERIOD_MS),
+            ))
         }
     }
 }
@@ -212,14 +220,6 @@ pub mod control_phase {
     pub const SELECT: u8 = 0;
     pub const OPERATE: u8 = 1;
     pub const FRAGMENT_END: u8 = 3;
-}
-
-fn event_mode(x: u8) -> EventMode {
-    match x {
-        1 => EventMode::Force,
-        2 => EventMode::Suppress,
-        _ => EventMode::Detect,
-    }
 }
 
 fn apply_reply_ops(db: &mut Database, shared: &Shared, ops: &[u8], what: &str) {
@@ -370,7 +370,7 @@ impl ControlHandler for DartControlHandler {
 
     fn end_fragment(&mut self, database: &mut DatabaseHandle) -> MaybeAsync<()> {
         if !self.pending_mirror.is_empty() {
-            let opts = UpdateOptions::new(true, event_mode(self.cfg.event_mode));
+            let opts = UpdateOptions::new(true, dbops::event_mode(self.cfg.event_mode));
             let time = Timestamp::try_from_system_time(SystemTime::now()).map(Time::Synchronized);
             let pending = std::mem::take(&mut self.pending_mirror);
             database.transaction(|db| {
@@ -1169,6 +1169,10 @@ pub fn server_bind(server: u64, c: Completion) -> Result<i64> {
     spawn_op(c, async move {
         match srv.bind().await {
             Ok(handle) => {
+                // destroyed while binding: dropping the handle shuts the server down again
+                if SERVERS.get(server).is_err() {
+                    return Err(Error::invalid_handle(server));
+                }
                 let addr = handle
                     .local_addr()
                     .map(|x| x.to_string())

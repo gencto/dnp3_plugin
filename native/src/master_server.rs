@@ -16,7 +16,7 @@ use dnp3::tcp::{
 use crate::codec::Writer;
 use crate::config::{self, AcceptActionDto, AcceptConfigDto, MasterServerDto};
 use crate::core::*;
-use crate::dart::DartPort;
+use crate::dart::{post, DartPort, Payload};
 
 pub struct MasterServerEntry {
     _handle: ServerHandle,
@@ -34,7 +34,13 @@ pub mod request {
     pub const START: u8 = 1;
     pub const ACCEPT_LINK_ID: u8 = 2;
     pub const START_WITH_LINK_ID: u8 = 3;
+    /// notification (token 0, no reply): the session of an accepted channel ended and the
+    /// channel was released
+    pub const CLOSED: u8 = 4;
 }
+
+/// How often an accepted channel is probed for the end of its session
+const SESSION_PROBE: Duration = Duration::from_secs(1);
 
 /// `u8 type, u8 pad, u16 source, u16 destination, u16 pad, u64 channel, blob address`
 fn encode(kind: u8, source: u16, destination: u16, channel: u64, addr: SocketAddr) -> Vec<u8> {
@@ -78,6 +84,40 @@ impl Handler {
     }
 }
 
+/// Release an accepted channel once its TCP session ends, so a long-running server does not
+/// accumulate one channel per connection. Dart is notified with [`request::CLOSED`].
+fn watch_session(
+    port: DartPort,
+    server: i64,
+    channel_id: u64,
+    addr: SocketAddr,
+    channels: Arc<Mutex<Vec<u64>>>,
+) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(SESSION_PROBE).await;
+            // gone: destroyed by Dart or together with the server
+            let Ok(mut channel) = crate::master::channel(channel_id) else {
+                break;
+            };
+            if channel.get_decode_level().await.is_ok() {
+                continue;
+            }
+            if crate::master::destroy(channel_id).is_ok() {
+                post(
+                    port,
+                    msg::MASTER_SERVER_REQUEST,
+                    0,
+                    server,
+                    Payload::CopiedBytes(encode(request::CLOSED, 0, 0, channel_id, addr)),
+                );
+            }
+            break;
+        }
+        channels.lock().unwrap().retain(|x| *x != channel_id);
+    });
+}
+
 impl ConnectionHandler for Handler {
     fn accept(
         &mut self,
@@ -119,6 +159,7 @@ impl ConnectionHandler for Handler {
     ) -> impl Future<Output = ()> + Send {
         let channel_id = self.register(channel);
         let (port, id, timeout) = (self.port, self.id, self.timeout);
+        let channels = self.channels.clone();
         async move {
             // wait until Dart has configured the channel (associations, enable)
             let _ = request_async(
@@ -129,6 +170,7 @@ impl ConnectionHandler for Handler {
                 timeout,
             )
             .await;
+            watch_session(port, id, channel_id, addr, channels);
         }
     }
 
@@ -167,6 +209,7 @@ impl ConnectionHandler for Handler {
     ) -> impl Future<Output = ()> + Send {
         let channel_id = self.register(channel);
         let (port, id, timeout) = (self.port, self.id, self.timeout);
+        let channels = self.channels.clone();
         async move {
             let _ = request_async(
                 port,
@@ -182,6 +225,7 @@ impl ConnectionHandler for Handler {
                 timeout,
             )
             .await;
+            watch_session(port, id, channel_id, addr, channels);
         }
     }
 }

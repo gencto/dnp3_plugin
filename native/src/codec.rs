@@ -78,14 +78,6 @@ impl Writer {
     }
 
     #[inline]
-    pub fn pad8(&mut self) {
-        let rem = self.buf.len() % 8;
-        if rem != 0 {
-            self.zeros(8 - rem);
-        }
-    }
-
-    #[inline]
     pub fn patch_u16(&mut self, pos: usize, x: u16) {
         self.buf[pos..pos + 2].copy_from_slice(&x.to_le_bytes());
     }

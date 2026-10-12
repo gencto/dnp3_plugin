@@ -7,6 +7,8 @@ import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import 'config.dart';
 import 'connection_policy.dart';
 import 'errors.dart';
@@ -58,12 +60,14 @@ mixin ClientEvents {
   ConnectionPolicy? _connectionPolicy;
   List<String> _endpoints = const [];
 
+  @internal
   void setConnectionPolicy(ConnectionPolicy? policy, List<String> endpoints) {
     _connectionPolicy = policy;
     _endpoints = endpoints;
   }
 
   /// Answer a native connection request with the installed [ConnectionPolicy]
+  @internal
   void answerConnectionRequest(int token, Uint8List data) =>
       handleConnectionRequest(_connectionPolicy, _endpoints, token, data);
 
@@ -80,6 +84,7 @@ mixin ClientEvents {
   Stream<ConnectionEvent> get connectionEvents => _connectionEvents.stream;
 
   /// Returns true if the event was consumed
+  @internal
   bool handleClientEvent(int kind, int b, Object? payload) {
     switch (kind) {
       case Msg.clientState:
@@ -97,6 +102,7 @@ mixin ClientEvents {
     return false;
   }
 
+  @internal
   void closeClientEvents() {
     _clientStates.close();
     _portStates.close();
@@ -117,9 +123,10 @@ final class MasterChannel with ClientEvents {
   final bool _owned;
   final _associations = <Association>[];
   bool _destroyed = false;
+  bool _released = false;
 
   MasterChannel._(this.handle, this._rt, this._owned) {
-    if (_owned) _rt.register(handle, _onEvent);
+    if (_owned) _rt.register(handle, _onEvent, _release);
   }
 
   static MasterChannel _create(
@@ -278,16 +285,29 @@ final class MasterChannel with ClientEvents {
     final id =
         await _rt.call((p, r) => dnp3_master_add_association(handle, json.address, json.length, events, p, r))
             as int;
+    // destroyed while the association was being added: it is gone with the channel
+    _checkAlive();
     final assoc = Association._(id, address, _rt, eventPort == null, this)
       .._autoAck = maxInFlightFragments > 0 && !manualAck;
     _associations.add(assoc);
     return assoc;
   }
 
-  /// Shut down the channel and all its associations
+  /// Shut down the channel and all its associations.
+  ///
+  /// The native channel is shared by all isolates: destroying an [attach]ed instance shuts
+  /// it down for the creating isolate as well.
   void destroy() {
     if (_destroyed) return;
     _destroyed = true;
+    _release();
+    dnp3_master_destroy(handle);
+  }
+
+  /// Stop delivering events to this isolate (the native channel is left untouched)
+  void _release() {
+    if (_released) return;
+    _released = true;
     if (_owned) {
       _rt.unregister(handle);
       closeClientEvents();
@@ -296,7 +316,6 @@ final class MasterChannel with ClientEvents {
       a._release();
     }
     _associations.clear();
-    dnp3_master_destroy(handle);
   }
 }
 
@@ -445,7 +464,9 @@ final class FileReadTransfer {
   final FutureOr<bool> Function(int size)? _onOpened;
 
   FileReadTransfer._(this._id, this._rt, [this._onOpened]) {
-    _rt.register(_id, _onEvent);
+    _rt.register(_id, _onEvent, () => _fail(const ShutdownException('runtime closed')));
+    // the failure is also reported through [blocks]; do not require awaiting [size]
+    _opened.future.ignore();
   }
 
   /// Size announced by the outstation when the file was opened
@@ -491,14 +512,18 @@ final class FileReadTransfer {
       case 2: // aborted
         final s = payload as String;
         final sep = s.indexOf('|');
-        final err = decodeError(int.parse(s.substring(0, sep)), s.substring(sep + 1));
-        if (!_opened.isCompleted) _opened.completeError(err);
-        _blocks.addError(err);
-        _finish();
+        _fail(decodeError(int.parse(s.substring(0, sep)), s.substring(sep + 1)));
       case 3: // completed
         if (!_opened.isCompleted) _opened.complete(0);
         _finish();
     }
+  }
+
+  void _fail(Object error) {
+    if (_blocks.isClosed) return;
+    if (!_opened.isCompleted) _opened.completeError(error);
+    _blocks.addError(error);
+    _finish();
   }
 
   void _finish() {
@@ -523,7 +548,7 @@ final class Association {
   bool _autoAck = false;
 
   Association._(this.handle, this.address, this._rt, this._owned, [this._channel]) {
-    if (_owned) _rt.register(handle, _onEvent);
+    if (_owned) _rt.register(handle, _onEvent, _release);
   }
 
   /// Use an association created in another isolate. Measurements are still delivered to
@@ -637,8 +662,7 @@ final class Association {
       _rt.call((p, r) => dnp3_association_synchronize_time(handle, procedure.index, p, r));
 
   /// Offset applied to the system clock when synchronizing outstations
-  void setTimeOffset(Duration offset) =>
-      check(dnp3_association_set_time_offset(handle, offset.inMilliseconds));
+  void setTimeOffset(Duration offset) => setTimeSource(TimeSource.system(offset));
 
   /// Clock used for time synchronization (automatic and [synchronizeTime])
   void setTimeSource(TimeSource source) =>
@@ -688,6 +712,9 @@ final class Association {
     FileMode mode = FileMode.read,
     int maxBlockSize = 1024,
   }) async {
+    RangeError.checkValueInInterval(authKey, 0, 0xFFFFFFFF, 'authKey');
+    RangeError.checkValueInInterval(fileSize, 0, 0xFFFFFFFF, 'fileSize');
+    RangeError.checkValueInInterval(maxBlockSize, 0, 0xFFFF, 'maxBlockSize');
     final n = utf8Bytes(name);
     final data =
         await _rt.call(
@@ -715,7 +742,8 @@ final class Association {
 
   /// Write one block. `blockNumber` starts at 0; set `last` on the final block.
   Future<void> writeFileBlock(int fileHandle, int blockNumber, Uint8List data, {bool last = false}) {
-    final block = (blockNumber & 0x7FFFFFFF) | (last ? 0x80000000 : 0);
+    RangeError.checkValueInInterval(blockNumber, 0, 0x7FFFFFFF, 'blockNumber');
+    final block = blockNumber | (last ? 0x80000000 : 0);
     return _rt.call(
       (p, r) => dnp3_association_write_file_block(handle, fileHandle, block, data.address, data.length, p, r),
     );
@@ -902,13 +930,17 @@ final class MeasurementWorker {
     String debugName = 'dnp3-measurements',
   }) async {
     final ready = ReceivePort();
-    final isolate = await Isolate.spawn(_workerMain, (
-      ready.sendPort,
-      onFragment,
-      onEvent,
-    ), debugName: debugName);
-    final port = await ready.first as SendPort;
-    return MeasurementWorker._(isolate, port);
+    try {
+      final isolate = await Isolate.spawn(_workerMain, (
+        ready.sendPort,
+        onFragment,
+        onEvent,
+      ), debugName: debugName);
+      final port = await ready.first as SendPort;
+      return MeasurementWorker._(isolate, port);
+    } finally {
+      ready.close();
+    }
   }
 
   static void _workerMain(
@@ -923,9 +955,13 @@ final class MeasurementWorker {
       }
       final decoded = decodeAssociationMessage(message);
       if (decoded is MeasurementFragment) {
-        onFragment(decoded);
-        // flow control: acknowledge in the worker (no-op without `maxInFlightFragments`)
-        dnp3_association_ack((message as List)[1] as int, 1);
+        try {
+          onFragment(decoded);
+        } finally {
+          // flow control: acknowledge in the worker (no-op without `maxInFlightFragments`),
+          // also when the handler throws, so the master is never left waiting
+          dnp3_association_ack((message as List)[1] as int, 1);
+        }
       } else if (decoded is AssociationEvent) {
         onEvent?.call(decoded);
       }

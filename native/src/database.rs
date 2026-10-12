@@ -46,13 +46,17 @@ pub mod op {
 
 pub const RESULT_SIZE: usize = 24;
 
-fn options(event_mode: u8, opts: u8) -> UpdateOptions {
-    let mode = match event_mode {
+/// Wire code of an event mode: 0 detect, 1 force, 2 suppress
+pub fn event_mode(x: u8) -> EventMode {
+    match x {
         1 => EventMode::Force,
         2 => EventMode::Suppress,
         _ => EventMode::Detect,
-    };
-    UpdateOptions::new(opts & 1 != 0, mode)
+    }
+}
+
+fn options(mode: u8, opts: u8) -> UpdateOptions {
+    UpdateOptions::new(opts & 1 != 0, event_mode(mode))
 }
 
 fn class(x: u8) -> Option<EventClass> {
@@ -64,12 +68,21 @@ fn class(x: u8) -> Option<EventClass> {
     }
 }
 
+fn counter_dead_band(x: f64) -> Result<u32> {
+    if x.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(&x) {
+        Ok(x as u32)
+    } else {
+        Err(Error::arg(format!("counter dead band {x} is not a u32")))
+    }
+}
+
 fn bad_var(t: &str, v: u8) -> Error {
     Error::arg(format!("invalid {t} variation {v}"))
 }
 
+/// Add a point; with `db == None` only the arguments are validated
 fn add_point(
-    db: &mut Database,
+    mut db: Option<&mut Database>,
     ty: u8,
     index: u16,
     class: Option<EventClass>,
@@ -90,7 +103,7 @@ fn add_point(
                 3 => EventBinaryInputVariation::Group2Var3,
                 x => return Err(bad_var("g2", x)),
             };
-            db.add(index, class, BinaryInputConfig::new(s, e))
+            add(&mut db, index, class, BinaryInputConfig::new(s, e))
         }
         kind::DOUBLE_BIT_BINARY_INPUT => {
             let s = match s {
@@ -104,7 +117,7 @@ fn add_point(
                 3 => EventDoubleBitBinaryInputVariation::Group4Var3,
                 x => return Err(bad_var("g4", x)),
             };
-            db.add(index, class, DoubleBitBinaryInputConfig::new(s, e))
+            add(&mut db, index, class, DoubleBitBinaryInputConfig::new(s, e))
         }
         kind::BINARY_OUTPUT_STATUS => {
             let s = match s {
@@ -117,7 +130,7 @@ fn add_point(
                 2 => EventBinaryOutputStatusVariation::Group11Var2,
                 x => return Err(bad_var("g11", x)),
             };
-            db.add(index, class, BinaryOutputStatusConfig::new(s, e))
+            add(&mut db, index, class, BinaryOutputStatusConfig::new(s, e))
         }
         kind::COUNTER => {
             let s = match s {
@@ -134,7 +147,12 @@ fn add_point(
                 6 => EventCounterVariation::Group22Var6,
                 x => return Err(bad_var("g22", x)),
             };
-            db.add(index, class, CounterConfig::new(s, e, deadband as u32))
+            add(
+                &mut db,
+                index,
+                class,
+                CounterConfig::new(s, e, counter_dead_band(deadband)?),
+            )
         }
         kind::FROZEN_COUNTER => {
             let s = match s {
@@ -153,10 +171,11 @@ fn add_point(
                 6 => EventFrozenCounterVariation::Group23Var6,
                 x => return Err(bad_var("g23", x)),
             };
-            db.add(
+            add(
+                &mut db,
                 index,
                 class,
-                FrozenCounterConfig::new(s, e, deadband as u32),
+                FrozenCounterConfig::new(s, e, counter_dead_band(deadband)?),
             )
         }
         kind::ANALOG_INPUT => {
@@ -180,7 +199,12 @@ fn add_point(
                 8 => EventAnalogInputVariation::Group32Var8,
                 x => return Err(bad_var("g32", x)),
             };
-            db.add(index, class, AnalogInputConfig::new(s, e, deadband))
+            add(
+                &mut db,
+                index,
+                class,
+                AnalogInputConfig::new(s, e, deadband),
+            )
         }
         kind::ANALOG_OUTPUT_STATUS => {
             let s = match s {
@@ -201,15 +225,45 @@ fn add_point(
                 8 => EventAnalogOutputStatusVariation::Group42Var8,
                 x => return Err(bad_var("g42", x)),
             };
-            db.add(index, class, AnalogOutputStatusConfig::new(s, e, deadband))
+            add(
+                &mut db,
+                index,
+                class,
+                AnalogOutputStatusConfig::new(s, e, deadband),
+            )
         }
-        kind::OCTET_STRING => db.add(index, class, OctetStringConfig),
+        kind::OCTET_STRING => add(&mut db, index, class, OctetStringConfig),
         x => {
             return Err(Error::arg(format!(
                 "point type {x} cannot be added to the database"
             )))
         }
     })
+}
+
+fn add<T>(db: &mut Option<&mut Database>, index: u16, class: Option<EventClass>, config: T) -> bool
+where
+    Database: Add<T>,
+{
+    match db {
+        Some(db) => db.add(index, class, config),
+        None => true,
+    }
+}
+
+/// Point types accepted by update / remove ops
+fn check_point_type(ty: u8, octet_string: bool) -> Result<()> {
+    match ty {
+        kind::BINARY_INPUT
+        | kind::DOUBLE_BIT_BINARY_INPUT
+        | kind::BINARY_OUTPUT_STATUS
+        | kind::COUNTER
+        | kind::FROZEN_COUNTER
+        | kind::ANALOG_INPUT
+        | kind::ANALOG_OUTPUT_STATUS => Ok(()),
+        kind::OCTET_STRING if octet_string => Ok(()),
+        x => Err(Error::arg(format!("invalid point type {x}"))),
+    }
 }
 
 fn remove_point(db: &mut Database, ty: u8, index: u16) -> Result<bool> {
@@ -352,8 +406,43 @@ pub struct PointIndex {
 }
 
 /// Apply all ops in `data` to the database. Returns the number of ops executed.
+///
+/// The batch is all-or-nothing: every op is decoded and validated before the first one is
+/// executed, so an invalid buffer leaves the database untouched.
 pub fn apply(
     db: &mut Database,
+    data: &[u8],
+    out: Option<&mut [u8]>,
+    index: Option<&mut PointIndex>,
+) -> Result<i64> {
+    validate(data)?;
+    run(Some(db), data, out, index)
+}
+
+/// Validation pass of [`apply`]. Batches of plain updates (the hot path) are only scanned;
+/// anything else goes through a full dry run.
+fn validate(data: &[u8]) -> Result<()> {
+    const UPDATE_SIZE: usize = 24;
+    let mut pos = 0;
+    while pos < data.len() {
+        let Some(op) = data.get(pos..pos + UPDATE_SIZE) else {
+            break;
+        };
+        if op[0] != op::UPDATE || op[1] == kind::OCTET_STRING {
+            break;
+        }
+        check_point_type(op[1], false)?;
+        pos += UPDATE_SIZE;
+    }
+    if pos < data.len() {
+        run(None, data, None, None)?;
+    }
+    Ok(())
+}
+
+/// Decode and execute (or, with `db == None`, only validate) the ops in `data`
+fn run(
+    mut db: Option<&mut Database>,
     data: &[u8],
     mut out: Option<&mut [u8]>,
     index: Option<&mut PointIndex>,
@@ -377,8 +466,10 @@ pub fn apply(
                 }
                 let value = OctetString::new(bytes)
                     .map_err(|_| Error::arg("octet string longer than 255 bytes"))?;
-                let info = db.update2(idx, &value, options(event_mode, opts));
-                info_result(&mut out, n, info);
+                if let Some(db) = db.as_deref_mut() {
+                    let info = db.update2(idx, &value, options(event_mode, opts));
+                    info_result(&mut out, n, info);
+                }
             }
             op::UPDATE => {
                 let flags = r.u8()?;
@@ -387,16 +478,19 @@ pub fn apply(
                 let opts = r.u8()?;
                 let value = r.u64()?;
                 let time = r.u64()?;
-                let info = update_point(
-                    db,
-                    ty,
-                    idx,
-                    flags,
-                    time_from_parts(tk, time),
-                    value,
-                    options(event_mode, opts),
-                )?;
-                info_result(&mut out, n, info);
+                check_point_type(ty, false)?;
+                if let Some(db) = db.as_deref_mut() {
+                    let info = update_point(
+                        db,
+                        ty,
+                        idx,
+                        flags,
+                        time_from_parts(tk, time),
+                        value,
+                        options(event_mode, opts),
+                    )?;
+                    info_result(&mut out, n, info);
+                }
             }
             op::ADD => {
                 let class = class(r.u8()?);
@@ -404,7 +498,7 @@ pub fn apply(
                 let e = r.u8()?;
                 r.u8()?;
                 let deadband = r.f64()?;
-                let ok = add_point(db, ty, idx, class, s, e, deadband)?;
+                let ok = add_point(db.as_deref_mut(), ty, idx, class, s, e, deadband)?;
                 if ok && ty == kind::COUNTER {
                     if let Some(index) = index.as_deref_mut() {
                         index.counters.insert(idx);
@@ -413,6 +507,11 @@ pub fn apply(
                 write_result(&mut out, n, ok as u32, 0, 0);
             }
             op::REMOVE => {
+                check_point_type(ty, true)?;
+                let Some(db) = db.as_deref_mut() else {
+                    n += 1;
+                    continue;
+                };
                 let ok = remove_point(db, ty, idx)?;
                 if ok && ty == kind::COUNTER {
                     if let Some(index) = index.as_deref_mut() {
@@ -427,14 +526,17 @@ pub fn apply(
                 let event_mode = r.u8()?;
                 let opts = r.u8()?;
                 let time = r.u64()?;
-                let info = db.update_flags(
-                    idx,
-                    flags_type(ty)?,
-                    Flags::new(flags),
-                    time_from_parts(tk, time),
-                    options(event_mode, opts),
-                );
-                info_result(&mut out, n, info);
+                let flags_type = flags_type(ty)?;
+                if let Some(db) = db.as_deref_mut() {
+                    let info = db.update_flags(
+                        idx,
+                        flags_type,
+                        Flags::new(flags),
+                        time_from_parts(tk, time),
+                        options(event_mode, opts),
+                    );
+                    info_result(&mut out, n, info);
+                }
             }
             op::DEFINE_ATTR => {
                 let writable = r.u8()? != 0;
@@ -444,6 +546,10 @@ pub fn apply(
                     AttrProp::writable()
                 } else {
                     AttrProp::default()
+                };
+                let Some(db) = db.as_deref_mut() else {
+                    n += 1;
+                    continue;
                 };
                 match db.define_attr(prop, attr) {
                     Ok(()) => write_result(&mut out, n, 1, 0, 0),
@@ -459,6 +565,10 @@ pub fn apply(
                 }
             }
             op::DISCARD_UNSELECTED => {
+                let Some(db) = db.as_deref_mut() else {
+                    n += 1;
+                    continue;
+                };
                 let c = db.discard_unselected_events(EventClasses::new(
                     ty & 2 != 0,
                     ty & 4 != 0,

@@ -334,13 +334,14 @@ final class Outstation with ClientEvents {
   final OutstationHandlers? _handlers;
   late final Database database = Database(handle);
   bool _destroyed = false;
+  bool _released = false;
 
   final _events = StreamController<OutstationEvent>.broadcast();
   final _info = StreamController<OutstationInfo>.broadcast();
   final _connection = StreamController<ConnectionState>.broadcast();
 
   Outstation._(this.handle, this._rt, this._owned, this._handlers) {
-    if (_owned) _rt.register(handle, _onEvent);
+    if (_owned) _rt.register(handle, _onEvent, _release);
   }
 
   static Outstation _create(
@@ -513,6 +514,7 @@ final class Outstation with ClientEvents {
           if (d == null) {
             NativeRuntime.reply(token, 0);
           } else {
+            RangeError.checkValueInInterval(d._value, 0, 0xFFFF, 'restart delay');
             final b = ByteData(2)..setUint16(0, d._value, Endian.little);
             NativeRuntime.reply(token, d._status, b.buffer.asUint8List());
           }
@@ -597,14 +599,26 @@ final class Outstation with ClientEvents {
   }
 
   /// Processing delay reported in non-LAN time synchronization (g52v2)
-  void setProcessingDelay(int milliseconds) =>
-      check(dnp3_outstation_set_processing_delay(handle, milliseconds));
+  void setProcessingDelay(int milliseconds) => check(
+    dnp3_outstation_set_processing_delay(
+      handle,
+      RangeError.checkValueInInterval(milliseconds, 0, 0xFFFF, 'milliseconds'),
+    ),
+  );
 
   /// Shut down the outstation (client / serial / UDP outstations stop immediately;
   /// server outstations stop when their server is destroyed)
   void destroy() {
     if (_destroyed) return;
     _destroyed = true;
+    _release();
+    dnp3_outstation_destroy(handle);
+  }
+
+  /// Stop delivering events to this isolate (the native outstation is left untouched)
+  void _release() {
+    if (_released) return;
+    _released = true;
     if (_owned) {
       _rt.unregister(handle);
       _events.close();
@@ -612,7 +626,6 @@ final class Outstation with ClientEvents {
       _connection.close();
       closeClientEvents();
     }
-    dnp3_outstation_destroy(handle);
   }
 }
 
@@ -622,6 +635,7 @@ final class OutstationServer {
   final NativeRuntime _rt;
   final _outstations = <Outstation>[];
   String? _localAddress;
+  bool _destroyed = false;
 
   OutstationServer._(this.handle, this._rt);
 
@@ -672,13 +686,12 @@ final class OutstationServer {
 
   /// Stop the server and all of its outstations
   void destroy() {
+    if (_destroyed) return;
+    _destroyed = true;
     for (final o in _outstations) {
-      o._destroyed = true;
-      _rt.unregister(o.handle);
-      o._events.close();
-      o._info.close();
-      o._connection.close();
-      o.closeClientEvents();
+      o
+        .._destroyed = true
+        .._release();
     }
     _outstations.clear();
     dnp3_outstation_server_destroy(handle);

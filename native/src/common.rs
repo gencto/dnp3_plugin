@@ -204,8 +204,8 @@ impl ClientConnectionHandler for DartConnectHandler {
             w.blob(format!("{addr}|{}", hostname.unwrap_or("")).as_bytes());
             if let Some(reply) = self.request(w.finish()) {
                 if reply.status == 2 {
-                    if let Some(x) = reply.data.get(0..8) {
-                        return Duration::from_millis(u64::from_le_bytes(x.try_into().unwrap()));
+                    if let Some(ms) = reply_ms(&reply.data) {
+                        return Duration::from_millis(ms);
                     }
                 }
             }
@@ -308,11 +308,7 @@ impl DartConnectHandler {
                 Some(Ok(info))
             }
             2 => {
-                let ms = reply
-                    .data
-                    .get(0..8)
-                    .map(|x| u64::from_le_bytes(x.try_into().unwrap()))
-                    .unwrap_or(1000);
+                let ms = reply_ms(&reply.data).unwrap_or(1000);
                 Some(Err(Duration::from_millis(ms)))
             }
             _ => None,
@@ -489,4 +485,10 @@ pub fn poll_error(e: PollError) -> Error {
         PollError::Shutdown => Error::new(err::SHUTDOWN, msg),
         PollError::NoSuchAssociation(_) => Error::with_sub(err::POLL, 1, msg),
     }
+}
+
+/// Leading little-endian u64 (milliseconds) of a Dart reply
+fn reply_ms(data: &[u8]) -> Option<u64> {
+    data.get(0..8)
+        .map(|x| u64::from_le_bytes(x.try_into().expect("8 bytes")))
 }

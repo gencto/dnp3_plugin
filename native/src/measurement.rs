@@ -236,14 +236,6 @@ impl FragmentBuilder {
         self.w.patch_u32(8, total);
         self.w.finish()
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn len(&self) -> usize {
-        self.w.len()
-    }
 }
 
 /// Encode a device attribute record (variable size)
@@ -332,10 +324,12 @@ impl Credits {
 
     pub fn ack(&self, n: i64) {
         use std::sync::atomic::Ordering;
-        let prev = self.in_flight.fetch_sub(n, Ordering::AcqRel);
-        if prev - n < 0 {
-            self.in_flight.store(0, Ordering::Release);
-        }
+        // never below zero, without losing concurrent increments from `emit`
+        let _ = self
+            .in_flight
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |x| {
+                Some((x - n).max(0))
+            });
         self.notify.notify_waiters();
     }
 
