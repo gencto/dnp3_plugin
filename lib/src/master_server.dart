@@ -64,6 +64,10 @@ abstract class MasterServerHandler {
   /// Like [start], for connections identified by link address
   FutureOr<void> startWithLinkId(MasterChannel channel, String remoteAddress, int source, int destination) =>
       start(channel, remoteAddress);
+
+  /// Called after the TCP session of an accepted channel ended. The channel has already
+  /// been destroyed and removed from [MasterServer.channels].
+  void closed(MasterChannel channel, String remoteAddress) {}
 }
 
 /// A master that listens for TCP connections initiated by outstations
@@ -73,9 +77,11 @@ final class MasterServer {
   final NativeRuntime _rt;
   final MasterServerHandler _handler;
   final _channels = <MasterChannel>[];
+  bool _destroyed = false;
 
   MasterServer._(this.handle, this.localAddress, this._rt, this._handler) {
-    _rt.register(handle, _onRequest);
+    // on runtime close the channels are released through their own registrations
+    _rt.register(handle, _onRequest, _channels.clear);
   }
 
   /// Channels created for accepted connections
@@ -122,9 +128,7 @@ final class MasterServer {
           final action = await _handler.accept(addr);
           NativeRuntime.reply(token, 1, utf8.encode(jsonEncode(action.toJson())));
         case 1:
-          final ch = MasterChannel.adopt(channelId);
-          _channels.add(ch);
-          await _handler.start(ch, addr);
+          await _start(channelId, (ch) => _handler.start(ch, addr));
           NativeRuntime.reply(token, 1);
         case 2:
           final cfg = await _handler.acceptLinkId(addr, source, destination);
@@ -134,18 +138,39 @@ final class MasterServer {
             NativeRuntime.reply(token, 1, utf8.encode(jsonEncode(cfg.toJson())));
           }
         case 3:
-          final ch = MasterChannel.adopt(channelId);
-          _channels.add(ch);
-          await _handler.startWithLinkId(ch, addr, source, destination);
+          await _start(channelId, (ch) => _handler.startWithLinkId(ch, addr, source, destination));
           NativeRuntime.reply(token, 1);
+        case 4:
+          // session ended; the native side already released the channel (no reply)
+          final i = _channels.indexWhere((c) => c.handle == channelId);
+          if (i < 0) return;
+          final ch = _channels.removeAt(i)..destroy();
+          _handler.closed(ch, addr);
+          return;
       }
     } catch (_) {
       NativeRuntime.reply(token, 0);
     }
   }
 
+  /// Run a start callback for a newly adopted channel; the channel is destroyed again if
+  /// the callback fails
+  Future<void> _start(int channelId, FutureOr<void> Function(MasterChannel channel) start) async {
+    final ch = MasterChannel.adopt(channelId);
+    _channels.add(ch);
+    try {
+      await start(ch);
+    } catch (_) {
+      _channels.remove(ch);
+      ch.destroy();
+      rethrow;
+    }
+  }
+
   /// Stop listening and shut down every accepted channel
   void destroy() {
+    if (_destroyed) return;
+    _destroyed = true;
     _rt.unregister(handle);
     for (final c in _channels) {
       c.destroy();

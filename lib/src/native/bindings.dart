@@ -84,9 +84,6 @@ external int dnp3_master_add_association(
 @Native<Int64 Function(Uint64, Int64, Int64)>(isLeaf: true)
 external int dnp3_association_remove(int id, int port, int request);
 
-@Native<Int64 Function(Uint64, Int64)>(isLeaf: true)
-external int dnp3_association_set_time_offset(int id, int offsetMs);
-
 @Native<Int64 Function(Uint64, Uint8, Int64)>(isLeaf: true)
 external int dnp3_association_set_time_source(int id, int mode, int value);
 

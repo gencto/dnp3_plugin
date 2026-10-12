@@ -20,6 +20,15 @@ fn variation(group: u8, var: u8) -> Result<dnp3::app::Variation> {
 ///
 /// kinds: 0 all objects, 1 one-byte range, 2 two-byte range, 3 one-byte limited count,
 /// 4 two-byte limited count
+/// One-byte range / count / index
+fn narrow(x: u16) -> Result<u8> {
+    u8::try_from(x).map_err(|_| Error::arg("value exceeds 255 for a one-byte prefix"))
+}
+
+fn dead_band_u16(x: u32) -> Result<u16> {
+    u16::try_from(x).map_err(|_| Error::arg("group 34 var 1 dead band exceeds 65535"))
+}
+
 fn read_header(r: &mut Reader) -> Result<ReadHeader> {
     let kind = r.u8()?;
     let g = r.u8()?;
@@ -28,9 +37,6 @@ fn read_header(r: &mut Reader) -> Result<ReadHeader> {
     let a = r.u16()?;
     let b = r.u16()?;
     let var = variation(g, v)?;
-    let narrow = |x: u16| -> Result<u8> {
-        u8::try_from(x).map_err(|_| Error::arg("one-byte range/count exceeds 255"))
-    };
     Ok(match kind {
         0 => ReadHeader::all_objects(var),
         1 => ReadHeader::one_byte_range(var, narrow(a)?, narrow(b)?),
@@ -88,9 +94,6 @@ pub fn headers(data: &[u8]) -> Result<Headers> {
                 let a = r.u16()?;
                 let b = r.u16()?;
                 let var = variation(g, v)?;
-                let narrow = |x: u16| -> Result<u8> {
-                    u8::try_from(x).map_err(|_| Error::arg("one-byte range/count exceeds 255"))
-                };
                 headers = match kind {
                     0 => headers.add_all_objects(var),
                     1 => headers.add_range_8(var, narrow(a)?, narrow(b)?),
@@ -135,8 +138,12 @@ pub fn owned_attribute(r: &mut Reader) -> Result<OwnedAttribute> {
     };
     let value = match ty {
         1 => OwnedAttrValue::VisibleString(r.string()?),
-        2 => OwnedAttrValue::UnsignedInt(r.i64()? as u32),
-        3 => OwnedAttrValue::SignedInt(r.i64()? as i32),
+        2 => OwnedAttrValue::UnsignedInt(
+            u32::try_from(r.i64()?).map_err(|_| Error::arg("unsigned attribute exceeds u32"))?,
+        ),
+        3 => OwnedAttrValue::SignedInt(
+            i32::try_from(r.i64()?).map_err(|_| Error::arg("signed attribute exceeds i32"))?,
+        ),
         4 => {
             let x = r.f64()?;
             OwnedAttrValue::FloatingPoint(if float_kind == 0 {
@@ -307,18 +314,17 @@ pub fn dead_bands(data: &[u8]) -> Result<Vec<DeadBandHeader>> {
             let bits = r.u32()?;
             raw.push((index, bits));
         }
-        let narrow = |x: u16| -> Result<u8> {
-            u8::try_from(x).map_err(|_| Error::arg("index exceeds 255 for 1-byte prefix"))
-        };
         let header = match (ty, wide) {
             (1, false) => DeadBandHeader::group34_var1_u8(
                 raw.iter()
-                    .map(|(i, v)| Ok((narrow(*i)?, *v as u16)))
+                    .map(|(i, v)| Ok((narrow(*i)?, dead_band_u16(*v)?)))
                     .collect::<Result<_>>()?,
             ),
-            (1, true) => {
-                DeadBandHeader::group34_var1_u16(raw.iter().map(|(i, v)| (*i, *v as u16)).collect())
-            }
+            (1, true) => DeadBandHeader::group34_var1_u16(
+                raw.iter()
+                    .map(|(i, v)| Ok((*i, dead_band_u16(*v)?)))
+                    .collect::<Result<_>>()?,
+            ),
             (2, false) => DeadBandHeader::group34_var2_u8(
                 raw.iter()
                     .map(|(i, v)| Ok((narrow(*i)?, *v)))

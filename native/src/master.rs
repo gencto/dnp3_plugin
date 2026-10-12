@@ -213,7 +213,7 @@ fn drop_association_entry(id: u64) {
     }
 }
 
-fn channel(id: u64) -> Result<MasterChannel> {
+pub(crate) fn channel(id: u64) -> Result<MasterChannel> {
     MASTERS.with(id, |m| m.channel.clone())
 }
 
@@ -404,20 +404,24 @@ pub fn add_association(master: u64, json: &str, events: DartPort, c: Completion)
             association_error(e)
         })?;
 
-        // the master may have been destroyed concurrently
-        let registered = MASTERS.with(master, |m| m.children.lock().unwrap().push(id));
+        // the master may have been destroyed concurrently: register under its read lock so
+        // `destroy` either sees the association as a child or the registration fails
+        let entry = Arc::new(AssociationEntry {
+            handle,
+            master,
+            polls: Mutex::new(Vec::new()),
+            time,
+        });
+        let registered = MASTERS.with(master, |m| {
+            m.children.lock().unwrap().push(id);
+            ASSOCIATIONS.insert_with_id(id, entry);
+        });
         if registered.is_err() {
+            if let Some(c) = CREDITS.remove(id) {
+                c.close();
+            }
             return Err(Error::invalid_handle(master));
         }
-        ASSOCIATIONS.insert_with_id(
-            id,
-            Arc::new(AssociationEntry {
-                handle,
-                master,
-                polls: Mutex::new(Vec::new()),
-                time,
-            }),
-        );
         Ok(id as i64)
     })
 }
@@ -434,14 +438,15 @@ pub fn remove_association(id: u64, c: Completion) -> Result<i64> {
 
 /// Acknowledge `n` processed measurement fragments (flow control)
 pub fn ack(id: u64, n: i64) -> Result<i64> {
+    if n < 0 {
+        return Err(Error::arg(
+            "acknowledged fragment count must not be negative",
+        ));
+    }
     CREDITS.with(id, |c| {
         c.ack(n);
         c.in_flight()
     })
-}
-
-pub fn set_time_offset(id: u64, offset_ms: i64) -> Result<i64> {
-    set_time_source(id, 0, offset_ms)
 }
 
 /// mode 0: system clock + `value` ms, 1: unavailable, 2: manual time `value` (epoch ms)

@@ -229,6 +229,7 @@ final class DatabaseTransaction {
   }
 
   void _header(int op, int type, int index) {
+    RangeError.checkValueInInterval(index, 0, 0xFFFF, 'index');
     _w.u32(op | (type << 8) | (index << 16));
     _count++;
   }
@@ -278,7 +279,7 @@ final class DatabaseTransaction {
     eventClass,
     staticVariation.code,
     eventVariation.code,
-    deadband.toDouble(),
+    RangeError.checkValueInInterval(deadband, 0, 0xFFFFFFFF, 'deadband').toDouble(),
   );
 
   void addFrozenCounter(
@@ -293,7 +294,7 @@ final class DatabaseTransaction {
     eventClass,
     staticVariation.code,
     eventVariation.code,
-    deadband.toDouble(),
+    RangeError.checkValueInInterval(deadband, 0, 0xFFFFFFFF, 'deadband').toDouble(),
   );
 
   void addAnalogInput(
@@ -546,6 +547,7 @@ final class Database {
       check(dnp3_outstation_transaction(handle, ops.address, ops.length, nullptr, 0));
 
   int _get(int kind, int index) {
+    RangeError.checkValueInInterval(index, 0, 0xFFFF, 'index');
     final buf = _scratch;
     return check(dnp3_outstation_get(handle, kind, index, buf.address, buf.length));
   }
@@ -638,6 +640,8 @@ final class Database {
   /// All defined points of one kind in `[start, stop]` as a zero-copy block view backed by
   /// native memory (released by a finalizer).
   MeasurementBlock getRange(PointType type, int start, int stop) {
+    RangeError.checkValueInInterval(start, 0, 0xFFFF, 'start');
+    RangeError.checkValueInInterval(stop, 0, 0xFFFF, 'stop');
     final lenPtr = _lenSlot;
     final ptr = dnp3_outstation_get_range(handle, type.code, start, stop, lenPtr);
     if (ptr == nullptr) throw lastError(-ErrorCode.invalidArgument);

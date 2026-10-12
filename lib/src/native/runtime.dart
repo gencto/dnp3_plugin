@@ -37,6 +37,8 @@ final class NativeRuntime {
   final RawReceivePort _port;
   final Map<int, Completer<Object?>> _pending = {};
   final Map<int, NativeEventHandler> _targets = {};
+  final Map<int, void Function()> _closers = {};
+  bool _closed = false;
   int _nextRequest = 1;
   void Function(int level, String message)? _logHandler;
 
@@ -68,13 +70,17 @@ final class NativeRuntime {
     _port.keepIsolateAlive = _pending.isNotEmpty || _targets.isNotEmpty;
   }
 
-  void register(int id, NativeEventHandler handler) {
+  /// Route events of native object `id` to `handler`. `onClose` runs if this runtime is
+  /// closed while the object is still registered (to close its streams).
+  void register(int id, NativeEventHandler handler, [void Function()? onClose]) {
     _targets[id] = handler;
+    if (onClose != null) _closers[id] = onClose;
     _updateKeepAlive();
   }
 
   void unregister(int id) {
     _targets.remove(id);
+    _closers.remove(id);
     _updateKeepAlive();
   }
 
@@ -107,8 +113,9 @@ final class NativeRuntime {
         final t = _targets[b];
         if (t != null) {
           t(kind, a, b, payload);
-        } else {
-          reply(a, 0);
+        } else if (a != 0) {
+          // the native side applies its fallback (as on a callback timeout)
+          reply(a, replyNoHandler);
         }
       default:
         _targets[a]?.call(kind, a, b, payload);
@@ -118,6 +125,7 @@ final class NativeRuntime {
   /// Start an asynchronous native operation. `invoke` receives the port and request id
   /// and must return the immediate status code of the native call.
   Future<Object?> call(int Function(int port, int request) invoke) {
+    if (_closed) return Future.error(const ShutdownException('runtime closed'));
     final id = _nextRequest++;
     final rc = invoke(port, id);
     if (rc < 0) return Future.error(lastError(rc));
@@ -139,12 +147,21 @@ final class NativeRuntime {
   /// Called after the native runtime was shut down: the next use re-initializes it
   static void markNativeShutdown() => _nativeReady = false;
 
-  /// Close the dispatcher of this isolate. Pending operations fail with [ShutdownException].
+  /// Close the dispatcher of this isolate. Pending operations fail with [ShutdownException],
+  /// event streams of the objects registered here are closed and later operations on them
+  /// fail with [ShutdownException].
   void close() {
+    if (_closed) return;
+    _closed = true;
     for (final c in _pending.values) {
       c.completeError(const ShutdownException('runtime closed'));
     }
     _pending.clear();
+    final closers = _closers.values.toList();
+    _closers.clear();
+    for (final f in closers) {
+      f();
+    }
     _targets.clear();
     _port.close();
     if (identical(_current, this)) _current = null;

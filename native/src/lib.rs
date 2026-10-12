@@ -232,11 +232,6 @@ pub extern "C" fn dnp3_association_remove(id: u64, port: i64, request: i64) -> i
     run(|| master::remove_association(id, c(port, request)))
 }
 
-#[no_mangle]
-pub extern "C" fn dnp3_association_set_time_offset(id: u64, offset_ms: i64) -> i64 {
-    run(|| master::set_time_offset(id, offset_ms))
-}
-
 /// Acknowledge processed measurement fragments of an association with flow control.
 /// Returns the number of fragments still in flight. Never calls back into Dart.
 #[no_mangle]

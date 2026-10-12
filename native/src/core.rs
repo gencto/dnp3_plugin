@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::dart::{post, DartPort, Payload};
 
 /// Version of the binary/C ABI. Dart refuses to work with a library whose version differs.
-pub const ABI_VERSION: i64 = 2;
+pub const ABI_VERSION: i64 = 3;
 
 /// Message kinds posted to Dart ports. Mirrored in `lib/src/native/protocol.dart`.
 pub mod msg {
@@ -421,6 +421,10 @@ pub struct Reply {
     pub data: Vec<u8>,
 }
 
+/// Reply status sent by Dart when no object handles the request (e.g. it was destroyed in
+/// that isolate). The request is treated like a timeout, i.e. the native fallback applies.
+pub const REPLY_NO_HANDLER: i64 = -1;
+
 enum Waiter {
     Sync(std::sync::mpsc::SyncSender<Reply>),
     Async(tokio::sync::oneshot::Sender<Reply>),
@@ -471,8 +475,10 @@ pub fn request_sync(
 
     if result.is_none() {
         PENDING.lock().unwrap().remove(&token);
+        // a reply delivered between the timeout and the removal is still in the channel
+        return rx.try_recv().ok().filter(|r| r.status != REPLY_NO_HANDLER);
     }
-    result
+    result.filter(|r| r.status != REPLY_NO_HANDLER)
 }
 
 /// Post a request to Dart and asynchronously wait for the reply
@@ -493,7 +499,7 @@ pub async fn request_async(
     }
 
     match tokio::time::timeout(timeout, rx).await {
-        Ok(Ok(reply)) => Some(reply),
+        Ok(Ok(reply)) => Some(reply).filter(|r| r.status != REPLY_NO_HANDLER),
         _ => {
             PENDING.lock().unwrap().remove(&token);
             None

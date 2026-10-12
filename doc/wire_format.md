@@ -1,6 +1,6 @@
 # Binary formats between Dart and native code
 
-All integers are little endian. ABI version: `2` (`dnp3_abi_version()`); the Dart side
+All integers are little endian. ABI version: `3` (`dnp3_abi_version()`); the Dart side
 refuses to run against a different version.
 
 ## Port messages (native → Dart)

@@ -23,6 +23,12 @@ final class ByteWriter {
 
   void reset() => _len = 0;
 
+  /// Values come from the public API: reject what would silently wrap on the wire
+  @pragma('vm:prefer-inline')
+  static void _check(int x, int min, int max) {
+    if (x < min || x > max) throw RangeError.range(x, min, max);
+  }
+
   void _ensure(int n) {
     final need = _len + n;
     if (need <= _buf.length) return;
@@ -36,29 +42,34 @@ final class ByteWriter {
   }
 
   void u8(int x) {
+    _check(x, 0, 0xFF);
     _ensure(1);
     _buf[_len++] = x;
   }
 
   void u16(int x) {
+    _check(x, 0, 0xFFFF);
     _ensure(2);
     _d.setUint16(_len, x, Endian.little);
     _len += 2;
   }
 
   void i16(int x) {
+    _check(x, -0x8000, 0x7FFF);
     _ensure(2);
     _d.setInt16(_len, x, Endian.little);
     _len += 2;
   }
 
   void u32(int x) {
+    _check(x, 0, 0xFFFFFFFF);
     _ensure(4);
     _d.setUint32(_len, x, Endian.little);
     _len += 4;
   }
 
   void i32(int x) {
+    _check(x, -0x80000000, 0x7FFFFFFF);
     _ensure(4);
     _d.setInt32(_len, x, Endian.little);
     _len += 4;
@@ -124,6 +135,8 @@ final class ByteWriter {
     int valueBits,
     int time,
   ) {
+    _check(index, 0, 0xFFFF);
+    _check(flags, 0, 0xFF);
     _ensure(24);
     final d = _d;
     final o = _len;
@@ -144,6 +157,8 @@ final class ByteWriter {
     double value,
     int time,
   ) {
+    _check(index, 0, 0xFFFF);
+    _check(flags, 0, 0xFF);
     _ensure(24);
     final d = _d;
     final o = _len;
