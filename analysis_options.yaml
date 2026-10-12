@@ -1,0 +1,12 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: false
+  exclude:
+    - native/**
+    - build/**
+
+linter:
+  rules:
+    - unawaited_futures: false

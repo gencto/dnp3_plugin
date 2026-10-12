@@ -8,7 +8,7 @@
 //!
 //! | op | name           | body                                                                   |
 //! |----|----------------|------------------------------------------------------------------------|
-//! | 1  | update         | `u8 flags, u8 time kind, u8 event mode, u8 options, u32 pad, u64 value, u64 time` (24 bytes total) |
+//! | 1  | update         | `u8 flags, u8 time kind, u8 event mode, u8 options, u64 value, u64 time` (24 bytes total) |
 //! | 1  | update (octet) | `u8 event mode, u8 options, u16 len, bytes, pad to 4`                  |
 //! | 2  | add            | `u8 class, u8 static var, u8 event var, u8 pad, f64 dead band` (16)    |
 //! | 3  | remove         | — (4)                                                                  |
@@ -312,7 +312,6 @@ pub fn apply(db: &mut Database, data: &[u8], mut out: Option<&mut [u8]>, index: 
                 let tk = r.u8()?;
                 let event_mode = r.u8()?;
                 let opts = r.u8()?;
-                r.skip(4)?;
                 let value = r.u64()?;
                 let time = r.u64()?;
                 let info = update_point(db, ty, idx, flags, time_from_parts(tk, time), value, options(event_mode, opts))?;
