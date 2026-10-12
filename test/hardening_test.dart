@@ -104,6 +104,39 @@ void main() {
     }
   });
 
+  test('a failing restart callback is reported as not supported, not as an immediate restart', () async {
+    final pair = await Pair.create(
+      handlers: OutstationHandlers(
+        application: const ApplicationConfig(coldRestart: RestartMode.callback),
+        applicationCallbacks: _ThrowingApp(),
+      ),
+    );
+    try {
+      await expectLater(
+        pair.association.coldRestart(),
+        throwsA(isA<TaskException>().having((e) => e.error, 'error', TaskError.rejectedByIin2)),
+      );
+    } finally {
+      pair.close();
+    }
+  });
+
+  test('request headers validate their ranges', () {
+    expect(() => ReadHeader.range(Variation.group30Var0, 5, 4), throwsRangeError);
+    expect(
+      () => DeadBandHeader.encodeAll([
+        const DeadBandHeader.g34v1({0: 70000}),
+      ]),
+      throwsRangeError,
+    );
+    expect(
+      () => DeadBandHeader.encodeAll([
+        const DeadBandHeader.g34v2({300: 1}, oneByteIndex: true),
+      ]),
+      throwsRangeError,
+    );
+  });
+
   test('a range read on a destroyed outstation reports an invalid handle', () async {
     final pair = await Pair.create();
     final db = pair.outstation.database;
@@ -147,4 +180,9 @@ class _Handler extends MasterServerHandler {
 
   @override
   void closed(MasterChannel channel, String remoteAddress) => closedAddresses.add(remoteAddress);
+}
+
+class _ThrowingApp extends OutstationApplication {
+  @override
+  RestartDelay? coldRestart() => throw StateError('broken');
 }

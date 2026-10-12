@@ -1,5 +1,5 @@
 //! Decoders for the binary request formats produced by the Dart side
-//! (`lib/src/native/encoders.dart`).
+//! (`lib/src/requests.dart`).
 
 use dnp3::app::attr::{AttrSet, FloatType, OwnedAttrValue, OwnedAttribute};
 use dnp3::app::control::*;
@@ -16,10 +16,6 @@ fn variation(group: u8, var: u8) -> Result<dnp3::app::Variation> {
         .ok_or_else(|| Error::arg(format!("unknown variation g{group}v{var}")))
 }
 
-/// Read header (8 bytes): u8 kind, u8 group, u8 var, u8 pad, u16 a, u16 b
-///
-/// kinds: 0 all objects, 1 one-byte range, 2 two-byte range, 3 one-byte limited count,
-/// 4 two-byte limited count
 /// One-byte range / count / index
 fn narrow(x: u16) -> Result<u8> {
     u8::try_from(x).map_err(|_| Error::arg("value exceeds 255 for a one-byte prefix"))
@@ -29,6 +25,10 @@ fn dead_band_u16(x: u32) -> Result<u16> {
     u16::try_from(x).map_err(|_| Error::arg("group 34 var 1 dead band exceeds 65535"))
 }
 
+/// Read header (8 bytes): u8 kind, u8 group, u8 var, u8 pad, u16 a, u16 b
+///
+/// kinds: 0 all objects, 1 one-byte range, 2 two-byte range, 3 one-byte limited count,
+/// 4 two-byte limited count
 fn read_header(r: &mut Reader) -> Result<ReadHeader> {
     let kind = r.u8()?;
     let g = r.u8()?;

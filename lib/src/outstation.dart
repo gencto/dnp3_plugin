@@ -667,10 +667,15 @@ final class Outstation with ClientEvents {
           final ok = await (app?.writeAttribute(attr) ?? true);
           NativeRuntime.reply(token, ok ? 1 : 0);
         default:
-          NativeRuntime.reply(token, 2);
+          NativeRuntime.reply(token, replyNoHandler);
       }
     } catch (_) {
-      NativeRuntime.reply(token, type == 5 ? 0 : 2);
+      // a failing callback answers "not supported" in the encoding of each request type
+      // (restart: status 0 = no delay; status 2 would mean "restart in 0 ms")
+      NativeRuntime.reply(token, switch (type) {
+        2 || 3 || 5 => 0,
+        _ => RequestResult.notSupported.index,
+      });
     }
   }
 

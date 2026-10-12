@@ -73,7 +73,8 @@ abstract final class Dnp3 {
   /// transfer without copying.
   static set zeroCopyThreshold(int bytes) => dnp3_set_external_threshold(bytes);
 
-  /// Disable Nagle's algorithm being turned off (TCP_NODELAY is enabled by default)
+  /// Turn TCP_NODELAY off again (it is on by default, i.e. Nagle's algorithm is disabled),
+  /// for client and / or server sockets created afterwards
   static void disableTcpNoDelay({bool client = true, bool server = true}) =>
       dnp3_disable_tcp_no_delay(client ? 1 : 0, server ? 1 : 0);
 

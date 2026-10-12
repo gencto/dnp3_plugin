@@ -36,8 +36,12 @@ final class ReadHeader {
     : this._(2, variation, _u16(start), _u16(stop));
 
   /// Range with the smallest qualifier that fits
-  factory ReadHeader.range(Variation variation, int start, int stop) =>
-      stop <= 0xFF ? ReadHeader.range8(variation, start, stop) : ReadHeader.range16(variation, start, stop);
+  factory ReadHeader.range(Variation variation, int start, int stop) {
+    RangeError.checkValueInInterval(start, 0, stop, 'start');
+    return stop <= 0xFF
+        ? ReadHeader.range8(variation, start, stop)
+        : ReadHeader.range16(variation, start, stop);
+  }
 
   /// qualifier 0x07
   ReadHeader.limitedCount8(Variation variation, int count) : this._(3, variation, _u8(count), 0);
@@ -464,6 +468,8 @@ final class DeadBandHeader {
         ..u8(h.oneByteIndex ? 1 : 2)
         ..u16(h.values.length);
       for (final MapEntry(:key, :value) in h.values.entries) {
+        RangeError.checkValueInInterval(key, 0, h.oneByteIndex ? 0xFF : 0xFFFF, 'index');
+        if (h._type == 1) RangeError.checkValueInInterval(value.toInt(), 0, 0xFFFF, 'g34v1 dead band');
         w
           ..u16(key)
           ..u16(0);
