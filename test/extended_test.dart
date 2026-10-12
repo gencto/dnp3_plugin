@@ -256,7 +256,8 @@ void main() {
           pair.outstation.transaction((tx) => tx.updateCounter(0, v * 10));
           await eventually(() => pair.outstation.database.getFrozenCounter(0)!.value == v * 10);
         }
-        expect(fires, greaterThanOrEqualTo(3));
+        // events arrive asynchronously through the port; the database is read synchronously
+        await eventually(() => fires >= 3);
       } finally {
         pair.close();
       }
