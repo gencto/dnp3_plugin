@@ -36,7 +36,7 @@ jobs:
             dnp3-native-prebuilt.zip
             prebuilt/SHA256SUMS
           generate_release_notes: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dnp3-native-prebuilt
           path: dnp3-native-prebuilt.zip
