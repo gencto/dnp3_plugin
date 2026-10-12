@@ -325,11 +325,21 @@ impl Credits {
     pub fn ack(&self, n: i64) {
         use std::sync::atomic::Ordering;
         // never below zero, without losing concurrent increments from `emit`
-        let _ = self
-            .in_flight
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |x| {
-                Some((x - n).max(0))
-            });
+        // (a CAS loop: `fetch_update` is deprecated on newer toolchains, `try_update` is
+        // not available on the MSRV)
+        let mut cur = self.in_flight.load(Ordering::Acquire);
+        loop {
+            let next = (cur - n).max(0);
+            match self.in_flight.compare_exchange_weak(
+                cur,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => cur = actual,
+            }
+        }
         self.notify.notify_waiters();
     }
 

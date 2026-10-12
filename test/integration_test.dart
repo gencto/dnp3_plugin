@@ -371,12 +371,14 @@ void main() {
   });
 
   test('handles are released', () async {
-    final before = Dnp3.objectCounts;
     final pair = await Pair.create();
     pair.close();
-    final after = Dnp3.objectCounts;
-    expect(after.$1, before.$1);
-    expect(after.$4, before.$4);
+    // object counts are process-wide and test files run concurrently: check these handles
+    await expectLater(
+      MasterChannel.attach(pair.master.handle).enable(),
+      throwsA(isA<InvalidHandleException>()),
+    );
+    expect(() => Database(pair.outstation.handle).getCounter(0), throwsA(isA<InvalidHandleException>()));
   });
 }
 
