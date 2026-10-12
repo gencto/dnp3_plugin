@@ -463,11 +463,11 @@ impl DartApplication {
                     .get(0..2)
                     .map(|x| u16::from_le_bytes([x[0], x[1]]))
                     .unwrap_or(0);
-                return match reply.status {
+                match reply.status {
                     1 => Some(RestartDelay::Seconds(value)),
                     2 => Some(RestartDelay::Milliseconds(value)),
                     _ => None,
-                };
+                }
             }
         };
         if result.is_some() {
