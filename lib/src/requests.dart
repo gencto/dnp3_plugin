@@ -17,6 +17,7 @@ import 'variation.dart';
 final class ReadHeader {
   /// 0 all objects, 1 one-byte range, 2 two-byte range, 3 one-byte count, 4 two-byte count
   final int _kind;
+  /// Object group and variation requested
   final Variation variation;
   final int _a;
   final int _b;
@@ -68,6 +69,7 @@ int _u16(int x) {
 
 /// What a master asks the outstation for
 sealed class ReadRequest {
+  /// Base constructor of the request kinds
   const ReadRequest();
 
   /// Class scan, e.g. `ReadRequest.classScan(const Classes.all())` for an integrity poll
@@ -79,11 +81,14 @@ sealed class ReadRequest {
   /// Event poll (class 1, 2 and 3)
   const factory ReadRequest.events() = _EventScan;
 
+  /// Read with explicit object headers (at least one, checked when encoded)
   const factory ReadRequest.headers(List<ReadHeader> headers) = _Headers;
 
+  /// Read all objects of [variation] (qualifier 0x06)
   factory ReadRequest.allObjects(Variation variation) =>
       ReadRequest.headers([ReadHeader.allObjects(variation)]);
 
+  /// Read indices [start]..[stop] of [variation] (qualifier 0x00 or 0x01, see [ReadHeader.range])
   factory ReadRequest.range(Variation variation, int start, int stop) =>
       ReadRequest.headers([ReadHeader.range(variation, start, stop)]);
 
@@ -91,8 +96,10 @@ sealed class ReadRequest {
   factory ReadRequest.deviceAttribute(int variation, {int set = 0}) =>
       ReadRequest.headers([ReadHeader.range8(Variation.group0(variation), set, set)]);
 
+  /// Writes the request in the native read request format
   void encode(ByteWriter w);
 
+  /// The request encoded in the native read request format
   Uint8List toBytes() {
     final w = ByteWriter(64);
     encode(w);
@@ -147,13 +154,20 @@ final class _Headers extends ReadRequest {
 
 /// Control Relay Output Block (g12v1)
 final class Crob {
+  /// Control code: operation type, trip/close code, queue and clear bits
   final ControlCode code;
+  /// Number of times to execute the operation (0..255)
   final int count;
+  /// Duration of the on (active) part of a pulse, in milliseconds
   final int onTimeMs;
+  /// Duration of the off (inactive) part of a pulse, in milliseconds
   final int offTimeMs;
+  /// CROB executing [code] [count] times with the given pulse timings
   const Crob(this.code, {this.count = 1, this.onTimeMs = 0, this.offTimeMs = 0});
 
+  /// LATCH_ON executed once
   const Crob.latchOn() : this(const ControlCode.latchOn());
+  /// LATCH_OFF executed once
   const Crob.latchOff() : this(const ControlCode.latchOff());
 
   @override
@@ -162,14 +176,20 @@ final class Crob {
 
 /// Analog output command (g41)
 sealed class AnalogOutput {
+  /// Base constructor of the g41 variations
   const AnalogOutput();
+  /// g41v1: 32-bit signed integer
   const factory AnalogOutput.int32(int value) = AnalogOutputInt32;
+  /// g41v2: 16-bit signed integer
   const factory AnalogOutput.int16(int value) = AnalogOutputInt16;
+  /// g41v3: single-precision float
   const factory AnalogOutput.float32(double value) = AnalogOutputFloat32;
+  /// g41v4: double-precision float
   const factory AnalogOutput.double64(double value) = AnalogOutputDouble64;
 
   int get _type;
   void _encode(ByteWriter w);
+  /// Requested output value
   num get value;
 }
 
@@ -177,6 +197,7 @@ sealed class AnalogOutput {
 final class AnalogOutputInt32 extends AnalogOutput {
   @override
   final int value;
+  /// Command with [value] (-2^31..2^31-1, checked when encoded)
   const AnalogOutputInt32(this.value);
   @override
   int get _type => 1;
@@ -190,6 +211,7 @@ final class AnalogOutputInt32 extends AnalogOutput {
 final class AnalogOutputInt16 extends AnalogOutput {
   @override
   final int value;
+  /// Command with [value] (-32768..32767, checked when encoded)
   const AnalogOutputInt16(this.value);
   @override
   int get _type => 2;
@@ -201,6 +223,7 @@ final class AnalogOutputInt16 extends AnalogOutput {
 final class AnalogOutputFloat32 extends AnalogOutput {
   @override
   final double value;
+  /// Command with [value], sent as a single-precision float
   const AnalogOutputFloat32(this.value);
   @override
   int get _type => 3;
@@ -214,6 +237,7 @@ final class AnalogOutputFloat32 extends AnalogOutput {
 final class AnalogOutputDouble64 extends AnalogOutput {
   @override
   final double value;
+  /// Command with [value]
   const AnalogOutputDouble64(this.value);
   @override
   int get _type => 4;
@@ -223,6 +247,7 @@ final class AnalogOutputDouble64 extends AnalogOutput {
     ..f64(value);
 }
 
+/// How a [CommandSet] is sent
 enum CommandMode { directOperate, selectBeforeOperate }
 
 /// Collection of commands sent in one SELECT/OPERATE or DIRECT_OPERATE request.
@@ -235,6 +260,7 @@ final class CommandSet {
   /// Use 1-byte index prefixes (qualifier 0x17) instead of 2-byte (0x28)
   final bool oneByteIndex;
 
+  /// Empty command set
   CommandSet({this.oneByteIndex = false});
 
   /// Single CROB
@@ -256,15 +282,19 @@ final class CommandSet {
     }
   }
 
+  /// Adds a g12v1 CROB for point [index] (RangeError if it does not fit the index prefix)
   void addCrob(int index, Crob crob) => _add(0, index, crob);
 
+  /// Adds a g41 analog output command for point [index], variation given by the value type
   void addAnalog(int index, AnalogOutput value) => _add(value._type, index, value);
 
   /// Start a new object header even if the next command has the same type
   void finishHeader() => _current = null;
 
+  /// Whether no command has been added
   bool get isEmpty => _headers.isEmpty;
 
+  /// Writes the commands in the native command format (StateError if empty)
   void encode(ByteWriter w, CommandMode mode) {
     if (_headers.isEmpty) throw StateError('empty command set');
     w
@@ -306,10 +336,15 @@ final class _CommandHeader {
 final class RequestHeaders {
   final ByteWriter _w = ByteWriter(64);
 
+  /// Adds an all-objects header (qualifier 0x06)
   RequestHeaders allObjects(Variation v) => _read(ReadHeader.allObjects(v));
+  /// Adds a one-byte start/stop range header (qualifier 0x00)
   RequestHeaders range8(Variation v, int start, int stop) => _read(ReadHeader.range8(v, start, stop));
+  /// Adds a two-byte start/stop range header (qualifier 0x01)
   RequestHeaders range16(Variation v, int start, int stop) => _read(ReadHeader.range16(v, start, stop));
+  /// Adds a one-byte limited count header (qualifier 0x07)
   RequestHeaders limitedCount8(Variation v, int count) => _read(ReadHeader.limitedCount8(v, count));
+  /// Adds a two-byte limited count header (qualifier 0x08)
   RequestHeaders limitedCount16(Variation v, int count) => _read(ReadHeader.limitedCount16(v, count));
 
   RequestHeaders _read(ReadHeader h) {
@@ -336,6 +371,7 @@ final class RequestHeaders {
     return this;
   }
 
+  /// Headers encoded in the native generic header format (view; valid until the next addition)
   Uint8List get bytes => _w.bytes;
 }
 
@@ -372,7 +408,9 @@ void encodeAttribute(ByteWriter w, DeviceAttribute a) {
 /// One header of analog input dead bands (group 34)
 final class DeadBandHeader {
   final int _type;
+  /// Use 1-byte index prefixes (qualifier 0x17) instead of 2-byte (0x28)
   final bool oneByteIndex;
+  /// Dead band per analog input index
   final Map<int, num> values;
 
   const DeadBandHeader._(this._type, this.values, this.oneByteIndex);
@@ -389,6 +427,7 @@ final class DeadBandHeader {
   const DeadBandHeader.g34v3(Map<int, double> values, {bool oneByteIndex = false})
     : this._(3, values, oneByteIndex);
 
+  /// Encodes [headers] in the native dead band format (for a WRITE of group 34)
   static Uint8List encodeAll(List<DeadBandHeader> headers) {
     final w = ByteWriter(64);
     final tmp = ByteData(4);

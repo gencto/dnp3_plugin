@@ -74,7 +74,7 @@ enum TaskError {
   /// 2: link-layer or I/O error.
   link,
 
-  /// 3: transport-layer error.
+  /// 3: transport or application-layer error.
   transport,
 
   /// 4: the outstation set an IIN2 error bit (see [TaskException.iin2]).
@@ -89,22 +89,22 @@ enum TaskError {
   /// 7: a non-final response fragment did not request confirmation.
   nonFinWithoutCon,
 
-  /// 8: a response was received without ever seeing the FIR fragment.
+  /// 8: a non-FIR fragment arrived while a FIR fragment was expected.
   neverReceivedFir,
 
-  /// 9: a FIR fragment arrived in the middle of a multi-fragment response.
+  /// 9: a second FIR fragment arrived after FIR was already received.
   unexpectedFir,
 
-  /// 10: a multi-fragment response was received where only one fragment is allowed.
+  /// 10: a multi-fragment response arrived where a single FIR/FIN fragment was expected.
   multiFragmentResponse,
 
   /// 11: no response within the configured response timeout.
   responseTimeout,
 
-  /// 12: writing the request to the channel failed.
+  /// 12: insufficient buffer space to serialize the request, or its data cannot be encoded.
   writeError,
 
-  /// 13: the request could not be encoded.
+  /// 13: request data could not be encoded (e.g. a bad device attribute).
   badEncoding,
 
   /// 14: the association (outstation address) does not exist.
@@ -113,7 +113,7 @@ enum TaskError {
   /// 15: there is no connection to the outstation.
   noConnection,
 
-  /// 16: the master was shut down.
+  /// 16: the master task was shut down.
   shutdown,
 
   /// 17: the master channel is disabled.
@@ -187,7 +187,7 @@ enum TimeSyncError {
   /// 2: the system time could not be converted to a DNP3 (Unix-epoch) time.
   systemTimeNotUnix,
 
-  /// 3: the outstation reported a delay larger than the measured round trip (see [TimeSyncException.value]).
+  /// 3: the outstation returned an invalid time delay, in ms (see [TimeSyncException.value]).
   badOutstationTimeDelay,
 
   /// 4: arithmetic overflow while computing the time.
@@ -234,16 +234,16 @@ enum FileError {
   /// 0: unrecognized sub-code.
   unknown,
 
-  /// 1: the outstation's file response was invalid.
+  /// 1: the outstation returned a bad file response.
   badResponse,
 
   /// 2: the outstation returned a non-success file status (see [FileException.fileStatus]).
   badStatus,
 
-  /// 3: the response referenced a different file handle.
+  /// 3: the file handle in the response does not match the request.
   wrongHandle,
 
-  /// 4: permission denied by the outstation.
+  /// 4: the outstation denied permission to access the file.
   noPermission,
 
   /// 5: a data block arrived with an unexpected block number.
@@ -252,7 +252,7 @@ enum FileError {
   /// 6: the transfer was aborted by the user.
   abortByUser,
 
-  /// 7: the file exceeded the configured maximum length.
+  /// 7: the file exceeded the maximum length given by the caller.
   maxLengthExceeded,
 }
 
@@ -281,6 +281,6 @@ final class AssociationException extends Dnp3Exception {
   /// An association with the same outstation address already exists on the channel (sub-code 1).
   bool get duplicateAddress => subCode == 1;
 
-  /// The channel type does not allow this association, e.g. a second one on a TCP client (sub-code 2).
+  /// The operation needs a different channel type, stream (TCP/TLS/serial) vs UDP (sub-code 2).
   bool get wrongChannelType => subCode == 2;
 }

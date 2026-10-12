@@ -7,7 +7,25 @@ import 'native/bindings.dart';
 import 'native/runtime.dart';
 
 /// Log verbosity of the native library
-enum Dnp3LogLevel { off, error, warn, info, debug, trace }
+enum Dnp3LogLevel {
+  /// logging disabled
+  off,
+
+  /// errors only
+  error,
+
+  /// warnings and errors
+  warn,
+
+  /// informational messages and above
+  info,
+
+  /// debug messages and above
+  debug,
+
+  /// everything, including trace messages
+  trace,
+}
 
 /// Entry point for global configuration. Calling these methods is optional: the native
 /// library is initialized lazily on first use.
@@ -38,8 +56,10 @@ abstract final class Dnp3 {
     check(dnp3_logging_init(rt.port, level.index, withTarget ? 1 : 0));
   }
 
+  /// Change the native log level after [enableLogging]
   static void setLogLevel(Dnp3LogLevel level) => dnp3_logging_set_level(level.index);
 
+  /// Stop forwarding native log records and set the native level to [Dnp3LogLevel.off]
   static void disableLogging() {
     final rt = NativeRuntime.current;
     dnp3_logging_set_level(0);

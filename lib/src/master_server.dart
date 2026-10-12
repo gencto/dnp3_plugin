@@ -13,6 +13,7 @@ import 'native/runtime.dart';
 
 /// Decision for an incoming connection based on the remote address only
 sealed class AcceptAction {
+  /// Base constructor for subclasses
   const AcceptAction();
 
   /// Reject the connection
@@ -25,6 +26,7 @@ sealed class AcceptAction {
   /// Accept with the given channel configuration, then call [MasterServerHandler.start]
   const factory AcceptAction.accept(AcceptConfig config) = _Accept;
 
+  /// JSON reply sent to the native library
   Map<String, Object?> toJson();
 }
 
@@ -49,6 +51,7 @@ final class _Accept extends AcceptAction {
 
 /// Callbacks of a [MasterServer]. All of them may be asynchronous.
 abstract class MasterServerHandler {
+  /// Const constructor for subclasses
   const MasterServerHandler();
 
   /// Called for every accepted TCP connection
@@ -72,7 +75,10 @@ abstract class MasterServerHandler {
 
 /// A master that listens for TCP connections initiated by outstations
 final class MasterServer {
+  /// Native handle of the server
   final int handle;
+
+  /// Address the server is bound to (`ip:port`, with the actual port when bound to port 0)
   final String localAddress;
   final NativeRuntime _rt;
   final MasterServerHandler _handler;
@@ -87,6 +93,9 @@ final class MasterServer {
   /// Channels created for accepted connections
   List<MasterChannel> get channels => List.unmodifiable(_channels);
 
+  /// Listen on `address` (`ip:port`); [handler] decides for every incoming connection.
+  ///
+  /// [callbackTimeout] bounds each [handler] callback; on expiry the connection is rejected.
   static Future<MasterServer> bind(
     String address,
     MasterServerHandler handler, {
