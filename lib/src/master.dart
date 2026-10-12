@@ -102,6 +102,7 @@ final class MasterChannel with ClientEvents {
   final int handle;
   final NativeRuntime _rt;
   final bool _owned;
+  final _associations = <Association>[];
   bool _destroyed = false;
 
   MasterChannel._(this.handle, this._rt, this._owned) {
@@ -233,7 +234,9 @@ final class MasterChannel with ClientEvents {
     final id =
         await _rt.call((p, r) => dnp3_master_add_association(handle, json.address, json.length, events, p, r))
             as int;
-    return Association._(id, address, _rt, eventPort == null);
+    final assoc = Association._(id, address, _rt, eventPort == null, this);
+    _associations.add(assoc);
+    return assoc;
   }
 
   /// Shut down the channel and all its associations
@@ -244,6 +247,10 @@ final class MasterChannel with ClientEvents {
       _rt.unregister(handle);
       closeClientEvents();
     }
+    for (final a in _associations) {
+      a._release();
+    }
+    _associations.clear();
     dnp3_master_destroy(handle);
   }
 }
@@ -450,10 +457,12 @@ final class Association {
   final int address;
   final NativeRuntime _rt;
   final bool _owned;
+  final MasterChannel? _channel;
   final _measurements = StreamController<MeasurementFragment>.broadcast(sync: true);
   final _information = StreamController<AssociationEvent>.broadcast();
+  bool _released = false;
 
-  Association._(this.handle, this.address, this._rt, this._owned) {
+  Association._(this.handle, this.address, this._rt, this._owned, [this._channel]) {
     if (_owned) _rt.register(handle, _onEvent);
   }
 
@@ -461,6 +470,16 @@ final class Association {
   /// the isolate that created it (or to its `eventPort`).
   factory Association.attach(int handle, {int address = 0}) =>
       Association._(handle, address, NativeRuntime.current, false);
+
+  void _release() {
+    if (_released) return;
+    _released = true;
+    if (_owned) {
+      _rt.unregister(handle);
+      _measurements.close();
+      _information.close();
+    }
+  }
 
   void _onEvent(int kind, int a, int b, Object? payload) {
     switch (kind) {
@@ -744,11 +763,8 @@ final class Association {
 
   /// Remove the association from its channel
   Future<void> remove() async {
-    if (_owned) {
-      _rt.unregister(handle);
-      await _measurements.close();
-      await _information.close();
-    }
+    _release();
+    _channel?._associations.remove(this);
     await _rt.call((p, r) => dnp3_association_remove(handle, p, r));
   }
 }

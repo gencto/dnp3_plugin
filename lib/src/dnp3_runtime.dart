@@ -75,6 +75,7 @@ abstract final class Dnp3 {
   static void shutdown({Duration timeout = const Duration(seconds: 1)}) {
     closeIsolate();
     dnp3_runtime_shutdown(timeout.inMilliseconds);
+    NativeRuntime.markNativeShutdown();
   }
 
   static Level _level(int l) => switch (l) {

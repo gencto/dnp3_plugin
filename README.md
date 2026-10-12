@@ -240,6 +240,10 @@ Handler configuration (`OutstationHandlers`):
 | attribute write | `accept` (+ event), `reject` | `AttributeWriteMode.callback` (async) |
 | dead band writes / confirms | notifications | — |
 
+Callback mode parks one protocol worker per pending request. Do not `await` operations on
+the *same* outstation (enable/disable/decode level) inside a control callback: they are
+queued behind the callback and only run after it returns (or times out).
+
 ## Isolates
 
 * `MasterChannel.addAssociation(..., eventPort: worker.port)` — measurement fragments are
@@ -358,7 +362,7 @@ A synchronous Dart control callback adds ~25 µs (p50) per SELECT/OPERATE.
 ## Testing
 
 ```sh
-dart test                    # builds native/ through the hook, 42 tests
+dart test                    # builds native/ through the hook, 43 tests
 (cd native && cargo test)    # Rust unit tests
 ```
 

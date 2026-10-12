@@ -132,6 +132,9 @@ final class NativeRuntime {
     }
   }
 
+  /// Called after the native runtime was shut down: the next use re-initializes it
+  static void markNativeShutdown() => _nativeReady = false;
+
   /// Close the dispatcher of this isolate. Pending operations fail with [ShutdownException].
   void close() {
     for (final c in _pending.values) {

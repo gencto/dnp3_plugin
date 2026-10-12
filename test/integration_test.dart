@@ -362,6 +362,14 @@ void main() {
     });
   });
 
+  test('destroying a channel releases its associations', () async {
+    final pair = await Pair.create();
+    final assoc = pair.association;
+    pair.close();
+    await expectLater(assoc.read(const ReadRequest.integrity()), throwsA(isA<InvalidHandleException>()));
+    expect(await assoc.measurements.isEmpty, isTrue); // stream is closed
+  });
+
   test('handles are released', () async {
     final before = Dnp3.objectCounts;
     final pair = await Pair.create();
