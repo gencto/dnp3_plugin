@@ -5,6 +5,11 @@ All notable changes to this package are documented here. Versions follow
 contain breaking changes, which are marked **Breaking**. New entries go under
 `## Unreleased` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
+## 0.3.2
+
+* Packaging only: the 0.3.1 upload was made before its changelog entry was finalized, so its
+  `CHANGELOG.md` listed the 0.3.1 changes under "Unreleased". No code changes.
+
 ## 0.3.1
 
 * Docs: README restructured for pub.dev (installation from pub.dev, platform support matrix,
